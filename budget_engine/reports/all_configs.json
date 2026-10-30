@@ -1,0 +1,1431 @@
+{
+  "report_type": "cubesat_budget",
+  "schema_version": "1.0",
+  "generated_at": "2026-10-30T18:43:04+00:00",
+  "how_to_read": "Read 'summary' and 'warnings' first; details follow. Units in key names. cost_min_only=true: some parts unpriced. *_basis 'estimate' = unsourced.",
+  "mission_assumptions": {
+    "altitude_km": 500.0,
+    "design_life_years": 5.0,
+    "launch_cost_per_u_usd": 60000,
+    "solar_derate": 0.75,
+    "default_eps_efficiency_pct": 85.0,
+    "max_battery_dod": 0.3,
+    "drag_coefficient": 2.2,
+    "atmosphere_density_scale": 1.0
+  },
+  "default_duty_cycles": {
+    "structure": 0.0,
+    "solar": 0.0,
+    "battery": 0.0,
+    "platform": 1.0,
+    "eps": 1.0,
+    "obc": 1.0,
+    "adcs": 1.0,
+    "comms": 0.15,
+    "imager": 0.15,
+    "propulsion": 0.1,
+    "gnss": 1.0,
+    "antenna_uhf": 0.0,
+    "antenna_l": 0.0,
+    "antenna_s": 0.0,
+    "antenna_x": 0.0
+  },
+  "methodology": {
+    "mass": "Sum of quantity x unit mass, compared to the CubeSat Design Specification max mass for the form factor.",
+    "power_generation": "orbit_avg = peak solar W x solar_derate x EPS efficiency x sunlit fraction (cylindrical shadow, beta=0 worst case).",
+    "power_consumption": "orbit_avg = sum(peak W x duty_cycle). Duty cycles default per subsystem; override per item in a config file.",
+    "energy_balance": "POSITIVE if orbit-average generation >= orbit-average consumption.",
+    "battery": "Eclipse energy = avg consumption x eclipse duration; must be <= capacity x max depth of discharge.",
+    "orbit_lifetime": "Circular-orbit drag decay integrated with the Vallado exponential atmosphere down to 150 km. Tumbling mean cross-section, Cd=2.2, deployed panels ignored. Scale density with atmosphere_density_scale (1.0 = high solar activity, conservative).",
+    "delta_v": "Tsiolkovsky: Isp x g0 x ln(m_wet / m_dry). Station-keeping years = delta-v / annual drag make-up delta-v.",
+    "launch_cost": "Form-factor units x per-U rideshare price.",
+    "cost_efficiency": "usd_per_watt_year = total mission cost / (orbit-avg generation W x effective operational years). effective years = operational years x min(1, generation/consumption). Lower is better."
+  },
+  "configurations": [
+    {
+      "configuration": {
+        "id": 1,
+        "name": "1U Tech Demo (minimal)",
+        "form_factor": "1U",
+        "source": "database",
+        "mission_overrides": null
+      },
+      "summary": {
+        "mass_kg": 0.799,
+        "limit_kg": 2.0,
+        "margin_kg": 1.201,
+        "energy": "POSITIVE",
+        "net_w": 3.11,
+        "cost_usd": 93720,
+        "cost_min_only": true,
+        "years": 1.14,
+        "usd_per_watt_year": 20400
+      },
+      "warnings": [
+        "UNPRICED: NanoMind A3200"
+      ],
+      "mass_budget": {
+        "total_mass_kg": 0.799,
+        "structural_limit_kg": 2.0,
+        "limit_source": "CubeSat Design Specification max mass for 1U",
+        "margin_kg": 1.201,
+        "utilization_pct": 40.0,
+        "over_limit": false,
+        "overage_kg": 0.0,
+        "by_subsystem_kg": {
+          "battery": 0.27,
+          "solar": 0.2,
+          "structure": 0.12,
+          "eps": 0.1,
+          "comms": 0.085,
+          "obc": 0.024
+        },
+        "components_missing_mass": []
+      },
+      "power_budget": {
+        "solar_peak_generation_w": 9.6,
+        "sunlit_usable_generation_w": 6.48,
+        "orbit_avg_generation_w": 4.03,
+        "orbit_avg_consumption_w": 0.92,
+        "net_orbit_avg_power_w": 3.11,
+        "net_energy_per_orbit_wh": 4.91,
+        "net_energy_per_day_wh": 74.7,
+        "energy_balance": "POSITIVE",
+        "generation_to_consumption_ratio": 4.38,
+        "peak_consumption_all_on_w": 4.32,
+        "peak_exceeds_sunlit_generation": false,
+        "eps_conversion_efficiency_pct": 90.0,
+        "battery": {
+          "capacity_wh": 49.0,
+          "usable_wh_at_max_dod": 14.7,
+          "eclipse_energy_needed_wh": 0.55,
+          "eclipse_depth_of_discharge_pct": 1.1,
+          "max_allowed_dod_pct": 30.0,
+          "survives_eclipse": true
+        },
+        "loads": [
+          {
+            "component": "TRXVU UHF/VHF Duplex",
+            "subsystem": "comms",
+            "peak_w": 4.0,
+            "duty_cycle": 0.15,
+            "orbit_avg_w": 0.6
+          },
+          {
+            "component": "NanoMind A3200",
+            "subsystem": "obc",
+            "peak_w": 0.17,
+            "duty_cycle": 1.0,
+            "orbit_avg_w": 0.17
+          },
+          {
+            "component": "NanoPower P31U",
+            "subsystem": "eps",
+            "peak_w": 0.15,
+            "duty_cycle": 1.0,
+            "orbit_avg_w": 0.15
+          }
+        ]
+      },
+      "propulsion_power_check": null,
+      "cost_budget": {
+        "hardware_cost_known_usd": 33720,
+        "hardware_cost_by_basis_usd": {
+          "catalog": 11150,
+          "estimate": 19600,
+          "vendor": 2970
+        },
+        "estimated_share_of_hardware_cost_pct": 58.1,
+        "components_without_price": [
+          "NanoMind A3200"
+        ],
+        "hardware_cost_is_lower_bound": true,
+        "launch_cost_usd": 60000,
+        "launch_cost_basis": "1.0U x $60,000/U rideshare",
+        "total_mission_cost_usd": 93720
+      },
+      "orbit_and_propulsion": {
+        "altitude_km": 500.0,
+        "orbital_period_min": 94.6,
+        "eclipse_min_per_orbit": 35.8,
+        "mean_cross_section_m2": 0.0163,
+        "ballistic_coefficient_m2_per_kg": 0.04502,
+        "natural_orbit_lifetime_years": 1.14,
+        "drag_makeup_dv_m_s_per_year": 28.68,
+        "has_propulsion": false,
+        "propellant_kg": 0,
+        "effective_isp_s": 0.0,
+        "propulsion_type": null,
+        "delta_v_m_s": 0.0,
+        "station_keeping_years_from_propellant": 0.0,
+        "max_altitude_raise_km": 0.0,
+        "total_years_in_orbit": 1.14,
+        "operational_years": 1.14,
+        "operational_years_limited_by": "orbital decay"
+      },
+      "cost_efficiency": {
+        "usd_per_operational_year": 82211,
+        "sustainable_operation_fraction": 1.0,
+        "effective_operational_years": 1.14,
+        "usd_per_effective_operational_year": 82211,
+        "usd_per_orbit_avg_watt": 23256,
+        "usd_per_watt_year": 20400,
+        "usd_per_kg_in_orbit": 117297,
+        "launch_share_of_total_pct": 64.0,
+        "usd_per_delta_v_m_s": null,
+        "costs_are_lower_bound": true
+      },
+      "components": [
+        {
+          "id": 1,
+          "name": "1U CubeSat Structure",
+          "vendor": "EnduroSat",
+          "subsystem": "structure",
+          "quantity": 1,
+          "unit_mass_kg": 0.12,
+          "mass_basis": "vendor",
+          "unit_cost_usd": 1550.0,
+          "cost_basis": "catalog",
+          "unit_peak_power_w": 0.0,
+          "unit_generation_w": null,
+          "duty_cycle": 0.0
+        },
+        {
+          "id": 13,
+          "name": "1U Solar Panel X/Y",
+          "vendor": "EnduroSat",
+          "subsystem": "solar",
+          "quantity": 4,
+          "unit_mass_kg": 0.05,
+          "mass_basis": "estimate",
+          "unit_cost_usd": 2900.0,
+          "cost_basis": "estimate",
+          "unit_peak_power_w": 0.0,
+          "unit_generation_w": 2.4,
+          "duty_cycle": 0.0
+        },
+        {
+          "id": 23,
+          "name": "NanoPower P31U",
+          "vendor": "GomSpace",
+          "subsystem": "eps",
+          "quantity": 1,
+          "unit_mass_kg": 0.1,
+          "mass_basis": "estimate",
+          "unit_cost_usd": 8000.0,
+          "cost_basis": "estimate",
+          "unit_peak_power_w": 0.15,
+          "unit_generation_w": null,
+          "duty_cycle": 1.0
+        },
+        {
+          "id": 30,
+          "name": "Battery Pack 2S2P",
+          "vendor": "NanoAvionics",
+          "subsystem": "battery",
+          "quantity": 1,
+          "unit_mass_kg": 0.27,
+          "mass_basis": "estimate",
+          "unit_cost_usd": 2970.0,
+          "cost_basis": "vendor",
+          "unit_peak_power_w": 0.0,
+          "unit_generation_w": null,
+          "duty_cycle": 0.0
+        },
+        {
+          "id": 41,
+          "name": "NanoMind A3200",
+          "vendor": "GomSpace",
+          "subsystem": "obc",
+          "quantity": 1,
+          "unit_mass_kg": 0.024,
+          "mass_basis": "estimate",
+          "unit_cost_usd": null,
+          "cost_basis": null,
+          "unit_peak_power_w": 0.17,
+          "unit_generation_w": null,
+          "duty_cycle": 1.0
+        },
+        {
+          "id": 61,
+          "name": "TRXVU UHF/VHF Duplex",
+          "vendor": "ISISPACE",
+          "subsystem": "comms",
+          "quantity": 1,
+          "unit_mass_kg": 0.085,
+          "mass_basis": "catalog",
+          "unit_cost_usd": 9600.0,
+          "cost_basis": "catalog",
+          "unit_peak_power_w": 4.0,
+          "unit_generation_w": null,
+          "duty_cycle": 0.15
+        }
+      ]
+    },
+    {
+      "configuration": {
+        "id": 2,
+        "name": "3U Earth Observation (budget)",
+        "form_factor": "3U",
+        "source": "database",
+        "mission_overrides": null
+      },
+      "summary": {
+        "mass_kg": 2.658,
+        "limit_kg": 6.0,
+        "margin_kg": 3.342,
+        "energy": "POSITIVE",
+        "net_w": 9.61,
+        "cost_usd": 288900,
+        "cost_min_only": true,
+        "years": 1.58,
+        "usd_per_watt_year": 12959
+      },
+      "warnings": [
+        "UNPRICED: iOBC, Mantis"
+      ],
+      "mass_budget": {
+        "total_mass_kg": 2.658,
+        "structural_limit_kg": 6.0,
+        "limit_source": "CubeSat Design Specification max mass for 3U",
+        "margin_kg": 3.342,
+        "utilization_pct": 44.3,
+        "over_limit": false,
+        "overage_kg": 0.0,
+        "by_subsystem_kg": {
+          "adcs": 0.6,
+          "solar": 0.57,
+          "imager": 0.5,
+          "structure": 0.34,
+          "eps": 0.31,
+          "comms": 0.244,
+          "obc": 0.094
+        },
+        "components_missing_mass": []
+      },
+      "power_budget": {
+        "solar_peak_generation_w": 33.6,
+        "sunlit_usable_generation_w": 22.68,
+        "orbit_avg_generation_w": 14.11,
+        "orbit_avg_consumption_w": 4.5,
+        "net_orbit_avg_power_w": 9.61,
+        "net_energy_per_orbit_wh": 15.15,
+        "net_energy_per_day_wh": 230.6,
+        "energy_balance": "POSITIVE",
+        "generation_to_consumption_ratio": 3.14,
+        "peak_consumption_all_on_w": 18.1,
+        "peak_exceeds_sunlit_generation": false,
+        "eps_conversion_efficiency_pct": 90.0,
+        "battery": {
+          "capacity_wh": 45.0,
+          "usable_wh_at_max_dod": 13.5,
+          "eclipse_energy_needed_wh": 2.68,
+          "eclipse_depth_of_discharge_pct": 6.0,
+          "max_allowed_dod_pct": 30.0,
+          "survives_eclipse": true
+        },
+        "loads": [
+          {
+            "component": "CubeADCS 3-Axis",
+            "subsystem": "adcs",
+            "peak_w": 1.5,
+            "duty_cycle": 1.0,
+            "orbit_avg_w": 1.5
+          },
+          {
+            "component": "S-Band Transmitter",
+            "subsystem": "comms",
+            "peak_w": 6.0,
+            "duty_cycle": 0.15,
+            "orbit_avg_w": 0.9
+          },
+          {
+            "component": "Mantis",
+            "subsystem": "imager",
+            "peak_w": 6.0,
+            "duty_cycle": 0.15,
+            "orbit_avg_w": 0.9
+          },
+          {
+            "component": "UHF Transceiver II",
+            "subsystem": "comms",
+            "peak_w": 4.0,
+            "duty_cycle": 0.15,
+            "orbit_avg_w": 0.6
+          },
+          {
+            "component": "iOBC",
+            "subsystem": "obc",
+            "peak_w": 0.4,
+            "duty_cycle": 1.0,
+            "orbit_avg_w": 0.4
+          },
+          {
+            "component": "iEPS Type B (4-cell battery)",
+            "subsystem": "eps",
+            "peak_w": 0.2,
+            "duty_cycle": 1.0,
+            "orbit_avg_w": 0.2
+          }
+        ]
+      },
+      "propulsion_power_check": null,
+      "cost_budget": {
+        "hardware_cost_known_usd": 108900,
+        "hardware_cost_by_basis_usd": {
+          "estimate": 63500,
+          "catalog": 30600,
+          "vendor": 14800
+        },
+        "estimated_share_of_hardware_cost_pct": 58.3,
+        "components_without_price": [
+          "iOBC",
+          "Mantis"
+        ],
+        "hardware_cost_is_lower_bound": true,
+        "launch_cost_usd": 180000,
+        "launch_cost_basis": "3.0U x $60,000/U rideshare",
+        "total_mission_cost_usd": 288900
+      },
+      "orbit_and_propulsion": {
+        "altitude_km": 500.0,
+        "orbital_period_min": 94.6,
+        "eclipse_min_per_orbit": 35.8,
+        "mean_cross_section_m2": 0.0391,
+        "ballistic_coefficient_m2_per_kg": 0.03232,
+        "natural_orbit_lifetime_years": 1.58,
+        "drag_makeup_dv_m_s_per_year": 20.59,
+        "has_propulsion": false,
+        "propellant_kg": 0,
+        "effective_isp_s": 0.0,
+        "propulsion_type": null,
+        "delta_v_m_s": 0.0,
+        "station_keeping_years_from_propellant": 0.0,
+        "max_altitude_raise_km": 0.0,
+        "total_years_in_orbit": 1.58,
+        "operational_years": 1.58,
+        "operational_years_limited_by": "orbital decay"
+      },
+      "cost_efficiency": {
+        "usd_per_operational_year": 182848,
+        "sustainable_operation_fraction": 1.0,
+        "effective_operational_years": 1.58,
+        "usd_per_effective_operational_year": 182848,
+        "usd_per_orbit_avg_watt": 20475,
+        "usd_per_watt_year": 12959,
+        "usd_per_kg_in_orbit": 108691,
+        "launch_share_of_total_pct": 62.3,
+        "usd_per_delta_v_m_s": null,
+        "costs_are_lower_bound": true
+      },
+      "components": [
+        {
+          "id": 2,
+          "name": "3U CubeSat Structure",
+          "vendor": "EnduroSat",
+          "subsystem": "structure",
+          "quantity": 1,
+          "unit_mass_kg": 0.34,
+          "mass_basis": "vendor",
+          "unit_cost_usd": 3900.0,
+          "cost_basis": "estimate",
+          "unit_peak_power_w": 0.0,
+          "unit_generation_w": null,
+          "duty_cycle": 0.0
+        },
+        {
+          "id": 11,
+          "name": "3U Deployable Solar Array",
+          "vendor": "EnduroSat",
+          "subsystem": "solar",
+          "quantity": 2,
+          "unit_mass_kg": 0.285,
+          "mass_basis": "vendor",
+          "unit_cost_usd": 15300.0,
+          "cost_basis": "catalog",
+          "unit_peak_power_w": 0.0,
+          "unit_generation_w": 16.8,
+          "duty_cycle": 0.0
+        },
+        {
+          "id": 22,
+          "name": "iEPS Type B (4-cell battery)",
+          "vendor": "ISISPACE",
+          "subsystem": "eps",
+          "quantity": 1,
+          "unit_mass_kg": 0.31,
+          "mass_basis": "vendor",
+          "unit_cost_usd": 14000.0,
+          "cost_basis": "estimate",
+          "unit_peak_power_w": 0.2,
+          "unit_generation_w": null,
+          "duty_cycle": 1.0
+        },
+        {
+          "id": 40,
+          "name": "iOBC",
+          "vendor": "ISISPACE",
+          "subsystem": "obc",
+          "quantity": 1,
+          "unit_mass_kg": 0.094,
+          "mass_basis": "estimate",
+          "unit_cost_usd": null,
+          "cost_basis": null,
+          "unit_peak_power_w": 0.4,
+          "unit_generation_w": null,
+          "duty_cycle": 1.0
+        },
+        {
+          "id": 52,
+          "name": "CubeADCS 3-Axis",
+          "vendor": "CubeSpace",
+          "subsystem": "adcs",
+          "quantity": 1,
+          "unit_mass_kg": 0.6,
+          "mass_basis": "estimate",
+          "unit_cost_usd": 37000.0,
+          "cost_basis": "estimate",
+          "unit_peak_power_w": 1.5,
+          "unit_generation_w": null,
+          "duty_cycle": 1.0
+        },
+        {
+          "id": 60,
+          "name": "UHF Transceiver II",
+          "vendor": "EnduroSat",
+          "subsystem": "comms",
+          "quantity": 1,
+          "unit_mass_kg": 0.094,
+          "mass_basis": "literature",
+          "unit_cost_usd": 8600.0,
+          "cost_basis": "estimate",
+          "unit_peak_power_w": 4.0,
+          "unit_generation_w": null,
+          "duty_cycle": 0.15
+        },
+        {
+          "id": 63,
+          "name": "S-Band Transmitter",
+          "vendor": "EnduroSat",
+          "subsystem": "comms",
+          "quantity": 1,
+          "unit_mass_kg": 0.15,
+          "mass_basis": "estimate",
+          "unit_cost_usd": 14800.0,
+          "cost_basis": "vendor",
+          "unit_peak_power_w": 6.0,
+          "unit_generation_w": null,
+          "duty_cycle": 0.15
+        },
+        {
+          "id": 81,
+          "name": "Mantis",
+          "vendor": "Dragonfly Aerospace",
+          "subsystem": "imager",
+          "quantity": 1,
+          "unit_mass_kg": 0.5,
+          "mass_basis": "catalog",
+          "unit_cost_usd": null,
+          "cost_basis": null,
+          "unit_peak_power_w": 6.0,
+          "unit_generation_w": null,
+          "duty_cycle": 0.15
+        }
+      ]
+    },
+    {
+      "configuration": {
+        "id": 3,
+        "name": "6U Earth Observation (high-res)",
+        "form_factor": "6U",
+        "source": "database",
+        "mission_overrides": null
+      },
+      "summary": {
+        "mass_kg": 5.328,
+        "limit_kg": 12.0,
+        "margin_kg": 6.672,
+        "energy": "POSITIVE",
+        "net_w": 6.38,
+        "cost_usd": 446490,
+        "cost_min_only": true,
+        "years": 1.74,
+        "usd_per_watt_year": 17050
+      },
+      "warnings": [
+        "PEAK_OVER_SOLAR",
+        "UNPRICED: iOBC, XACT-100, Caiman"
+      ],
+      "mass_budget": {
+        "total_mass_kg": 5.328,
+        "structural_limit_kg": 12.0,
+        "limit_source": "CubeSat Design Specification max mass for 6U",
+        "margin_kg": 6.672,
+        "utilization_pct": 44.4,
+        "over_limit": false,
+        "overage_kg": 0.0,
+        "by_subsystem_kg": {
+          "imager": 1.4,
+          "adcs": 1.38,
+          "structure": 0.85,
+          "solar": 0.54,
+          "battery": 0.54,
+          "comms": 0.364,
+          "eps": 0.16,
+          "obc": 0.094
+        },
+        "components_missing_mass": []
+      },
+      "power_budget": {
+        "solar_peak_generation_w": 33.6,
+        "sunlit_usable_generation_w": 24.19,
+        "orbit_avg_generation_w": 15.05,
+        "orbit_avg_consumption_w": 8.68,
+        "net_orbit_avg_power_w": 6.38,
+        "net_energy_per_orbit_wh": 10.05,
+        "net_energy_per_day_wh": 153.0,
+        "energy_balance": "POSITIVE",
+        "generation_to_consumption_ratio": 1.73,
+        "peak_consumption_all_on_w": 32.05,
+        "peak_exceeds_sunlit_generation": true,
+        "eps_conversion_efficiency_pct": 96.0,
+        "battery": {
+          "capacity_wh": 98.0,
+          "usable_wh_at_max_dod": 29.4,
+          "eclipse_energy_needed_wh": 5.17,
+          "eclipse_depth_of_discharge_pct": 5.3,
+          "max_allowed_dod_pct": 30.0,
+          "survives_eclipse": true
+        },
+        "loads": [
+          {
+            "component": "XACT-100",
+            "subsystem": "adcs",
+            "peak_w": 4.0,
+            "duty_cycle": 1.0,
+            "orbit_avg_w": 4.0
+          },
+          {
+            "component": "X-Band Transmitter",
+            "subsystem": "comms",
+            "peak_w": 13.5,
+            "duty_cycle": 0.15,
+            "orbit_avg_w": 2.025
+          },
+          {
+            "component": "Caiman",
+            "subsystem": "imager",
+            "peak_w": 10.0,
+            "duty_cycle": 0.15,
+            "orbit_avg_w": 1.5
+          },
+          {
+            "component": "UHF Transceiver II",
+            "subsystem": "comms",
+            "peak_w": 4.0,
+            "duty_cycle": 0.15,
+            "orbit_avg_w": 0.6
+          },
+          {
+            "component": "iOBC",
+            "subsystem": "obc",
+            "peak_w": 0.4,
+            "duty_cycle": 1.0,
+            "orbit_avg_w": 0.4
+          },
+          {
+            "component": "CubeSat EPS 1.0",
+            "subsystem": "eps",
+            "peak_w": 0.15,
+            "duty_cycle": 1.0,
+            "orbit_avg_w": 0.15
+          }
+        ]
+      },
+      "propulsion_power_check": null,
+      "cost_budget": {
+        "hardware_cost_known_usd": 86490,
+        "hardware_cost_by_basis_usd": {
+          "estimate": 39100,
+          "vendor": 47390
+        },
+        "estimated_share_of_hardware_cost_pct": 45.2,
+        "components_without_price": [
+          "iOBC",
+          "XACT-100",
+          "Caiman"
+        ],
+        "hardware_cost_is_lower_bound": true,
+        "launch_cost_usd": 360000,
+        "launch_cost_basis": "6.0U x $60,000/U rideshare",
+        "total_mission_cost_usd": 446490
+      },
+      "orbit_and_propulsion": {
+        "altitude_km": 500.0,
+        "orbital_period_min": 94.6,
+        "eclipse_min_per_orbit": 35.8,
+        "mean_cross_section_m2": 0.071,
+        "ballistic_coefficient_m2_per_kg": 0.02933,
+        "natural_orbit_lifetime_years": 1.74,
+        "drag_makeup_dv_m_s_per_year": 18.68,
+        "has_propulsion": false,
+        "propellant_kg": 0,
+        "effective_isp_s": 0.0,
+        "propulsion_type": null,
+        "delta_v_m_s": 0.0,
+        "station_keeping_years_from_propellant": 0.0,
+        "max_altitude_raise_km": 0.0,
+        "total_years_in_orbit": 1.74,
+        "operational_years": 1.74,
+        "operational_years_limited_by": "orbital decay"
+      },
+      "cost_efficiency": {
+        "usd_per_operational_year": 256603,
+        "sustainable_operation_fraction": 1.0,
+        "effective_operational_years": 1.74,
+        "usd_per_effective_operational_year": 256603,
+        "usd_per_orbit_avg_watt": 29667,
+        "usd_per_watt_year": 17050,
+        "usd_per_kg_in_orbit": 83801,
+        "launch_share_of_total_pct": 80.6,
+        "usd_per_delta_v_m_s": null,
+        "costs_are_lower_bound": true
+      },
+      "components": [
+        {
+          "id": 3,
+          "name": "6U CubeSat Structure",
+          "vendor": "EnduroSat",
+          "subsystem": "structure",
+          "quantity": 1,
+          "unit_mass_kg": 0.85,
+          "mass_basis": "vendor",
+          "unit_cost_usd": 8500.0,
+          "cost_basis": "estimate",
+          "unit_peak_power_w": 0.0,
+          "unit_generation_w": null,
+          "duty_cycle": 0.0
+        },
+        {
+          "id": 14,
+          "name": "6U Solar Panel",
+          "vendor": "EnduroSat",
+          "subsystem": "solar",
+          "quantity": 2,
+          "unit_mass_kg": 0.27,
+          "mass_basis": "estimate",
+          "unit_cost_usd": 11000.0,
+          "cost_basis": "estimate",
+          "unit_peak_power_w": 0.0,
+          "unit_generation_w": 16.8,
+          "duty_cycle": 0.0
+        },
+        {
+          "id": 20,
+          "name": "CubeSat EPS 1.0",
+          "vendor": "NanoAvionics",
+          "subsystem": "eps",
+          "quantity": 1,
+          "unit_mass_kg": 0.16,
+          "mass_basis": "estimate",
+          "unit_cost_usd": 9150.0,
+          "cost_basis": "vendor",
+          "unit_peak_power_w": 0.15,
+          "unit_generation_w": null,
+          "duty_cycle": 1.0
+        },
+        {
+          "id": 30,
+          "name": "Battery Pack 2S2P",
+          "vendor": "NanoAvionics",
+          "subsystem": "battery",
+          "quantity": 2,
+          "unit_mass_kg": 0.27,
+          "mass_basis": "estimate",
+          "unit_cost_usd": 2970.0,
+          "cost_basis": "vendor",
+          "unit_peak_power_w": 0.0,
+          "unit_generation_w": null,
+          "duty_cycle": 0.0
+        },
+        {
+          "id": 40,
+          "name": "iOBC",
+          "vendor": "ISISPACE",
+          "subsystem": "obc",
+          "quantity": 1,
+          "unit_mass_kg": 0.094,
+          "mass_basis": "estimate",
+          "unit_cost_usd": null,
+          "cost_basis": null,
+          "unit_peak_power_w": 0.4,
+          "unit_generation_w": null,
+          "duty_cycle": 1.0
+        },
+        {
+          "id": 51,
+          "name": "XACT-100",
+          "vendor": "Blue Canyon Technologies",
+          "subsystem": "adcs",
+          "quantity": 1,
+          "unit_mass_kg": 1.38,
+          "mass_basis": "catalog",
+          "unit_cost_usd": null,
+          "cost_basis": null,
+          "unit_peak_power_w": 4.0,
+          "unit_generation_w": null,
+          "duty_cycle": 1.0
+        },
+        {
+          "id": 60,
+          "name": "UHF Transceiver II",
+          "vendor": "EnduroSat",
+          "subsystem": "comms",
+          "quantity": 1,
+          "unit_mass_kg": 0.094,
+          "mass_basis": "literature",
+          "unit_cost_usd": 8600.0,
+          "cost_basis": "estimate",
+          "unit_peak_power_w": 4.0,
+          "unit_generation_w": null,
+          "duty_cycle": 0.15
+        },
+        {
+          "id": 64,
+          "name": "X-Band Transmitter",
+          "vendor": "EnduroSat",
+          "subsystem": "comms",
+          "quantity": 1,
+          "unit_mass_kg": 0.27,
+          "mass_basis": "literature",
+          "unit_cost_usd": 32300.0,
+          "cost_basis": "vendor",
+          "unit_peak_power_w": 13.5,
+          "unit_generation_w": null,
+          "duty_cycle": 0.15
+        },
+        {
+          "id": 82,
+          "name": "Caiman",
+          "vendor": "Dragonfly Aerospace",
+          "subsystem": "imager",
+          "quantity": 1,
+          "unit_mass_kg": 1.4,
+          "mass_basis": "catalog",
+          "unit_cost_usd": null,
+          "cost_basis": null,
+          "unit_peak_power_w": 10.0,
+          "unit_generation_w": null,
+          "duty_cycle": 0.15
+        }
+      ]
+    },
+    {
+      "configuration": {
+        "id": 4,
+        "name": "6U Electric Propulsion Demo",
+        "form_factor": "6U",
+        "source": "database",
+        "mission_overrides": null
+      },
+      "summary": {
+        "mass_kg": 6.331,
+        "limit_kg": 12.0,
+        "margin_kg": 5.669,
+        "energy": "POSITIVE",
+        "net_w": 2.48,
+        "cost_usd": 430190,
+        "cost_min_only": true,
+        "years": 5.0,
+        "usd_per_watt_year": 5717
+      },
+      "warnings": [
+        "PEAK_OVER_SOLAR",
+        "THRUSTER_BATTERY_LIMITED: 75.0/19.12 W",
+        "UNPRICED: NanoMind A3200, XACT-15, BIT-3 RF ion (iodine)"
+      ],
+      "mass_budget": {
+        "total_mass_kg": 6.331,
+        "structural_limit_kg": 12.0,
+        "limit_source": "CubeSat Design Specification max mass for 6U",
+        "margin_kg": 5.669,
+        "utilization_pct": 52.8,
+        "over_limit": false,
+        "overage_kg": 0.0,
+        "by_subsystem_kg": {
+          "propulsion": 2.9,
+          "adcs": 1.1,
+          "structure": 0.85,
+          "solar": 0.54,
+          "battery": 0.54,
+          "comms": 0.217,
+          "eps": 0.16,
+          "obc": 0.024
+        },
+        "components_missing_mass": []
+      },
+      "power_budget": {
+        "solar_peak_generation_w": 33.6,
+        "sunlit_usable_generation_w": 24.19,
+        "orbit_avg_generation_w": 15.05,
+        "orbit_avg_consumption_w": 12.57,
+        "net_orbit_avg_power_w": 2.48,
+        "net_energy_per_orbit_wh": 3.91,
+        "net_energy_per_day_wh": 59.5,
+        "energy_balance": "POSITIVE",
+        "generation_to_consumption_ratio": 1.2,
+        "peak_consumption_all_on_w": 91.12,
+        "peak_exceeds_sunlit_generation": true,
+        "eps_conversion_efficiency_pct": 96.0,
+        "battery": {
+          "capacity_wh": 98.0,
+          "usable_wh_at_max_dod": 29.4,
+          "eclipse_energy_needed_wh": 7.49,
+          "eclipse_depth_of_discharge_pct": 7.6,
+          "max_allowed_dod_pct": 30.0,
+          "survives_eclipse": true
+        },
+        "loads": [
+          {
+            "component": "BIT-3 RF ion (iodine)",
+            "subsystem": "propulsion",
+            "peak_w": 75.0,
+            "duty_cycle": 0.1,
+            "orbit_avg_w": 7.5
+          },
+          {
+            "component": "XACT-15",
+            "subsystem": "adcs",
+            "peak_w": 2.8,
+            "duty_cycle": 1.0,
+            "orbit_avg_w": 2.8
+          },
+          {
+            "component": "S-Band Transmitter",
+            "subsystem": "comms",
+            "peak_w": 9.0,
+            "duty_cycle": 0.15,
+            "orbit_avg_w": 1.35
+          },
+          {
+            "component": "TRXVU UHF/VHF Duplex",
+            "subsystem": "comms",
+            "peak_w": 4.0,
+            "duty_cycle": 0.15,
+            "orbit_avg_w": 0.6
+          },
+          {
+            "component": "NanoMind A3200",
+            "subsystem": "obc",
+            "peak_w": 0.17,
+            "duty_cycle": 1.0,
+            "orbit_avg_w": 0.17
+          },
+          {
+            "component": "CubeSat EPS 1.0",
+            "subsystem": "eps",
+            "peak_w": 0.15,
+            "duty_cycle": 1.0,
+            "orbit_avg_w": 0.15
+          }
+        ]
+      },
+      "propulsion_power_check": {
+        "thruster_power_w": 75.0,
+        "sunlit_surplus_for_thruster_w": 19.12,
+        "can_fire_on_solar_alone": false,
+        "battery_assisted_firing_min_per_orbit": 31.6,
+        "max_sustainable_thruster_duty_cycle": 0.133
+      },
+      "cost_budget": {
+        "hardware_cost_known_usd": 70190,
+        "hardware_cost_by_basis_usd": {
+          "estimate": 45500,
+          "vendor": 15090,
+          "catalog": 9600
+        },
+        "estimated_share_of_hardware_cost_pct": 64.8,
+        "components_without_price": [
+          "NanoMind A3200",
+          "XACT-15",
+          "BIT-3 RF ion (iodine)"
+        ],
+        "hardware_cost_is_lower_bound": true,
+        "launch_cost_usd": 360000,
+        "launch_cost_basis": "6.0U x $60,000/U rideshare",
+        "total_mission_cost_usd": 430190
+      },
+      "orbit_and_propulsion": {
+        "altitude_km": 500.0,
+        "orbital_period_min": 94.6,
+        "eclipse_min_per_orbit": 35.8,
+        "mean_cross_section_m2": 0.071,
+        "ballistic_coefficient_m2_per_kg": 0.02468,
+        "natural_orbit_lifetime_years": 2.07,
+        "drag_makeup_dv_m_s_per_year": 15.72,
+        "has_propulsion": true,
+        "propellant_kg": 1.5,
+        "effective_isp_s": 2150.0,
+        "propulsion_type": "electric (low-thrust spiral)",
+        "delta_v_m_s": 5701.3,
+        "station_keeping_years_from_propellant": 362.6,
+        "max_altitude_raise_km": "beyond GEO / escape-capable",
+        "total_years_in_orbit": 50.0,
+        "operational_years": 5.0,
+        "operational_years_limited_by": "design life"
+      },
+      "cost_efficiency": {
+        "usd_per_operational_year": 86038,
+        "sustainable_operation_fraction": 1.0,
+        "effective_operational_years": 5.0,
+        "usd_per_effective_operational_year": 86038,
+        "usd_per_orbit_avg_watt": 28584,
+        "usd_per_watt_year": 5717,
+        "usd_per_kg_in_orbit": 67950,
+        "launch_share_of_total_pct": 83.7,
+        "usd_per_delta_v_m_s": 75,
+        "costs_are_lower_bound": true
+      },
+      "components": [
+        {
+          "id": 3,
+          "name": "6U CubeSat Structure",
+          "vendor": "EnduroSat",
+          "subsystem": "structure",
+          "quantity": 1,
+          "unit_mass_kg": 0.85,
+          "mass_basis": "vendor",
+          "unit_cost_usd": 8500.0,
+          "cost_basis": "estimate",
+          "unit_peak_power_w": 0.0,
+          "unit_generation_w": null,
+          "duty_cycle": 0.0
+        },
+        {
+          "id": 14,
+          "name": "6U Solar Panel",
+          "vendor": "EnduroSat",
+          "subsystem": "solar",
+          "quantity": 2,
+          "unit_mass_kg": 0.27,
+          "mass_basis": "estimate",
+          "unit_cost_usd": 11000.0,
+          "cost_basis": "estimate",
+          "unit_peak_power_w": 0.0,
+          "unit_generation_w": 16.8,
+          "duty_cycle": 0.0
+        },
+        {
+          "id": 20,
+          "name": "CubeSat EPS 1.0",
+          "vendor": "NanoAvionics",
+          "subsystem": "eps",
+          "quantity": 1,
+          "unit_mass_kg": 0.16,
+          "mass_basis": "estimate",
+          "unit_cost_usd": 9150.0,
+          "cost_basis": "vendor",
+          "unit_peak_power_w": 0.15,
+          "unit_generation_w": null,
+          "duty_cycle": 1.0
+        },
+        {
+          "id": 30,
+          "name": "Battery Pack 2S2P",
+          "vendor": "NanoAvionics",
+          "subsystem": "battery",
+          "quantity": 2,
+          "unit_mass_kg": 0.27,
+          "mass_basis": "estimate",
+          "unit_cost_usd": 2970.0,
+          "cost_basis": "vendor",
+          "unit_peak_power_w": 0.0,
+          "unit_generation_w": null,
+          "duty_cycle": 0.0
+        },
+        {
+          "id": 41,
+          "name": "NanoMind A3200",
+          "vendor": "GomSpace",
+          "subsystem": "obc",
+          "quantity": 1,
+          "unit_mass_kg": 0.024,
+          "mass_basis": "estimate",
+          "unit_cost_usd": null,
+          "cost_basis": null,
+          "unit_peak_power_w": 0.17,
+          "unit_generation_w": null,
+          "duty_cycle": 1.0
+        },
+        {
+          "id": 50,
+          "name": "XACT-15",
+          "vendor": "Blue Canyon Technologies",
+          "subsystem": "adcs",
+          "quantity": 1,
+          "unit_mass_kg": 1.1,
+          "mass_basis": "catalog",
+          "unit_cost_usd": null,
+          "cost_basis": null,
+          "unit_peak_power_w": 2.8,
+          "unit_generation_w": null,
+          "duty_cycle": 1.0
+        },
+        {
+          "id": 61,
+          "name": "TRXVU UHF/VHF Duplex",
+          "vendor": "ISISPACE",
+          "subsystem": "comms",
+          "quantity": 1,
+          "unit_mass_kg": 0.085,
+          "mass_basis": "catalog",
+          "unit_cost_usd": 9600.0,
+          "cost_basis": "catalog",
+          "unit_peak_power_w": 4.0,
+          "unit_generation_w": null,
+          "duty_cycle": 0.15
+        },
+        {
+          "id": 62,
+          "name": "S-Band Transmitter",
+          "vendor": "ISISPACE",
+          "subsystem": "comms",
+          "quantity": 1,
+          "unit_mass_kg": 0.132,
+          "mass_basis": "catalog",
+          "unit_cost_usd": 15000.0,
+          "cost_basis": "estimate",
+          "unit_peak_power_w": 9.0,
+          "unit_generation_w": null,
+          "duty_cycle": 0.15
+        },
+        {
+          "id": 74,
+          "name": "BIT-3 RF ion (iodine)",
+          "vendor": "Busek",
+          "subsystem": "propulsion",
+          "quantity": 1,
+          "unit_mass_kg": 2.9,
+          "mass_basis": "estimate",
+          "unit_cost_usd": null,
+          "cost_basis": null,
+          "unit_peak_power_w": 75.0,
+          "unit_generation_w": null,
+          "duty_cycle": 0.1
+        }
+      ]
+    },
+    {
+      "configuration": {
+        "id": 5,
+        "name": "3U Green-Prop Maneuvering",
+        "form_factor": "3U",
+        "source": "database",
+        "mission_overrides": null
+      },
+      "summary": {
+        "mass_kg": 3.596,
+        "limit_kg": 6.0,
+        "margin_kg": 2.404,
+        "energy": "POSITIVE",
+        "net_w": 17.06,
+        "cost_usd": 271100,
+        "cost_min_only": true,
+        "years": 5.0,
+        "usd_per_watt_year": 2562
+      },
+      "warnings": [
+        "UNPRICED: OBC (2016), BGT-X5 class green monoprop (AF-M315E)"
+      ],
+      "mass_budget": {
+        "total_mass_kg": 3.596,
+        "structural_limit_kg": 6.0,
+        "limit_source": "CubeSat Design Specification max mass for 3U",
+        "margin_kg": 2.404,
+        "utilization_pct": 59.9,
+        "over_limit": false,
+        "overage_kg": 0.0,
+        "by_subsystem_kg": {
+          "propulsion": 1.49,
+          "solar": 0.936,
+          "adcs": 0.4,
+          "eps": 0.31,
+          "structure": 0.304,
+          "comms": 0.085,
+          "obc": 0.071
+        },
+        "components_missing_mass": []
+      },
+      "power_budget": {
+        "solar_peak_generation_w": 50.4,
+        "sunlit_usable_generation_w": 34.02,
+        "orbit_avg_generation_w": 21.16,
+        "orbit_avg_consumption_w": 4.1,
+        "net_orbit_avg_power_w": 17.06,
+        "net_energy_per_orbit_wh": 26.91,
+        "net_energy_per_day_wh": 409.5,
+        "energy_balance": "POSITIVE",
+        "generation_to_consumption_ratio": 5.16,
+        "peak_consumption_all_on_w": 25.5,
+        "peak_exceeds_sunlit_generation": false,
+        "eps_conversion_efficiency_pct": 90.0,
+        "battery": {
+          "capacity_wh": 45.0,
+          "usable_wh_at_max_dod": 13.5,
+          "eclipse_energy_needed_wh": 2.44,
+          "eclipse_depth_of_discharge_pct": 5.4,
+          "max_allowed_dod_pct": 30.0,
+          "survives_eclipse": true
+        },
+        "loads": [
+          {
+            "component": "BGT-X5 class green monoprop (AF-M315E)",
+            "subsystem": "propulsion",
+            "peak_w": 20.0,
+            "duty_cycle": 0.1,
+            "orbit_avg_w": 2.0
+          },
+          {
+            "component": "CubeADCS Y-Momentum",
+            "subsystem": "adcs",
+            "peak_w": 0.8,
+            "duty_cycle": 1.0,
+            "orbit_avg_w": 0.8
+          },
+          {
+            "component": "TRXVU UHF/VHF Duplex",
+            "subsystem": "comms",
+            "peak_w": 4.0,
+            "duty_cycle": 0.15,
+            "orbit_avg_w": 0.6
+          },
+          {
+            "component": "OBC (2016)",
+            "subsystem": "obc",
+            "peak_w": 0.5,
+            "duty_cycle": 1.0,
+            "orbit_avg_w": 0.5
+          },
+          {
+            "component": "iEPS Type B (4-cell battery)",
+            "subsystem": "eps",
+            "peak_w": 0.2,
+            "duty_cycle": 1.0,
+            "orbit_avg_w": 0.2
+          }
+        ]
+      },
+      "propulsion_power_check": {
+        "thruster_power_w": 20.0,
+        "sunlit_surplus_for_thruster_w": 31.92,
+        "can_fire_on_solar_alone": true,
+        "battery_assisted_firing_min_per_orbit": "unlimited in sunlight",
+        "max_sustainable_thruster_duty_cycle": 0.953
+      },
+      "cost_budget": {
+        "hardware_cost_known_usd": 91100,
+        "hardware_cost_by_basis_usd": {
+          "estimate": 81500,
+          "catalog": 9600
+        },
+        "estimated_share_of_hardware_cost_pct": 89.5,
+        "components_without_price": [
+          "OBC (2016)",
+          "BGT-X5 class green monoprop (AF-M315E)"
+        ],
+        "hardware_cost_is_lower_bound": true,
+        "launch_cost_usd": 180000,
+        "launch_cost_basis": "3.0U x $60,000/U rideshare",
+        "total_mission_cost_usd": 271100
+      },
+      "orbit_and_propulsion": {
+        "altitude_km": 500.0,
+        "orbital_period_min": 94.6,
+        "eclipse_min_per_orbit": 35.8,
+        "mean_cross_section_m2": 0.0391,
+        "ballistic_coefficient_m2_per_kg": 0.02389,
+        "natural_orbit_lifetime_years": 2.14,
+        "drag_makeup_dv_m_s_per_year": 15.22,
+        "has_propulsion": true,
+        "propellant_kg": 0.35,
+        "effective_isp_s": 220.0,
+        "propulsion_type": "chemical/cold-gas (impulsive)",
+        "delta_v_m_s": 220.9,
+        "station_keeping_years_from_propellant": 14.5,
+        "max_altitude_raise_km": 417.4,
+        "total_years_in_orbit": 16.66,
+        "operational_years": 5.0,
+        "operational_years_limited_by": "design life"
+      },
+      "cost_efficiency": {
+        "usd_per_operational_year": 54220,
+        "sustainable_operation_fraction": 1.0,
+        "effective_operational_years": 5.0,
+        "usd_per_effective_operational_year": 54220,
+        "usd_per_orbit_avg_watt": 12812,
+        "usd_per_watt_year": 2562,
+        "usd_per_kg_in_orbit": 75389,
+        "launch_share_of_total_pct": 66.4,
+        "usd_per_delta_v_m_s": 1227,
+        "costs_are_lower_bound": true
+      },
+      "components": [
+        {
+          "id": 4,
+          "name": "3U CubeSat Structure",
+          "vendor": "ISISPACE",
+          "subsystem": "structure",
+          "quantity": 1,
+          "unit_mass_kg": 0.304,
+          "mass_basis": "vendor",
+          "unit_cost_usd": 4500.0,
+          "cost_basis": "estimate",
+          "unit_peak_power_w": 0.0,
+          "unit_generation_w": null,
+          "duty_cycle": 0.0
+        },
+        {
+          "id": 12,
+          "name": "3U Double Deployable Solar Array",
+          "vendor": "EnduroSat",
+          "subsystem": "solar",
+          "quantity": 2,
+          "unit_mass_kg": 0.468,
+          "mass_basis": "vendor",
+          "unit_cost_usd": 24000.0,
+          "cost_basis": "estimate",
+          "unit_peak_power_w": 0.0,
+          "unit_generation_w": 25.2,
+          "duty_cycle": 0.0
+        },
+        {
+          "id": 22,
+          "name": "iEPS Type B (4-cell battery)",
+          "vendor": "ISISPACE",
+          "subsystem": "eps",
+          "quantity": 1,
+          "unit_mass_kg": 0.31,
+          "mass_basis": "vendor",
+          "unit_cost_usd": 14000.0,
+          "cost_basis": "estimate",
+          "unit_peak_power_w": 0.2,
+          "unit_generation_w": null,
+          "duty_cycle": 1.0
+        },
+        {
+          "id": 42,
+          "name": "OBC (2016)",
+          "vendor": "German Orbital Systems",
+          "subsystem": "obc",
+          "quantity": 1,
+          "unit_mass_kg": 0.071,
+          "mass_basis": "vendor",
+          "unit_cost_usd": null,
+          "cost_basis": null,
+          "unit_peak_power_w": 0.5,
+          "unit_generation_w": null,
+          "duty_cycle": 1.0
+        },
+        {
+          "id": 53,
+          "name": "CubeADCS Y-Momentum",
+          "vendor": "CubeSpace",
+          "subsystem": "adcs",
+          "quantity": 1,
+          "unit_mass_kg": 0.4,
+          "mass_basis": "estimate",
+          "unit_cost_usd": 15000.0,
+          "cost_basis": "estimate",
+          "unit_peak_power_w": 0.8,
+          "unit_generation_w": null,
+          "duty_cycle": 1.0
+        },
+        {
+          "id": 61,
+          "name": "TRXVU UHF/VHF Duplex",
+          "vendor": "ISISPACE",
+          "subsystem": "comms",
+          "quantity": 1,
+          "unit_mass_kg": 0.085,
+          "mass_basis": "catalog",
+          "unit_cost_usd": 9600.0,
+          "cost_basis": "catalog",
+          "unit_peak_power_w": 4.0,
+          "unit_generation_w": null,
+          "duty_cycle": 0.15
+        },
+        {
+          "id": 73,
+          "name": "BGT-X5 class green monoprop (AF-M315E)",
+          "vendor": "Busek",
+          "subsystem": "propulsion",
+          "quantity": 1,
+          "unit_mass_kg": 1.49,
+          "mass_basis": "literature",
+          "unit_cost_usd": null,
+          "cost_basis": null,
+          "unit_peak_power_w": 20.0,
+          "unit_generation_w": null,
+          "duty_cycle": 0.1
+        }
+      ]
+    }
+  ],
+  "comparison_ranked_by_usd_per_watt_year": [
+    {
+      "rank": 1,
+      "name": "3U Green-Prop Maneuvering",
+      "usd_per_watt_year": 2562,
+      "total_mission_cost_usd": 271100,
+      "over_limit": false,
+      "mass_margin_kg": 2.404,
+      "energy_balance": "POSITIVE",
+      "operational_years": 5.0,
+      "cost_is_lower_bound": true
+    },
+    {
+      "rank": 2,
+      "name": "6U Electric Propulsion Demo",
+      "usd_per_watt_year": 5717,
+      "total_mission_cost_usd": 430190,
+      "over_limit": false,
+      "mass_margin_kg": 5.669,
+      "energy_balance": "POSITIVE",
+      "operational_years": 5.0,
+      "cost_is_lower_bound": true
+    },
+    {
+      "rank": 3,
+      "name": "3U Earth Observation (budget)",
+      "usd_per_watt_year": 12959,
+      "total_mission_cost_usd": 288900,
+      "over_limit": false,
+      "mass_margin_kg": 3.342,
+      "energy_balance": "POSITIVE",
+      "operational_years": 1.58,
+      "cost_is_lower_bound": true
+    },
+    {
+      "rank": 4,
+      "name": "6U Earth Observation (high-res)",
+      "usd_per_watt_year": 17050,
+      "total_mission_cost_usd": 446490,
+      "over_limit": false,
+      "mass_margin_kg": 6.672,
+      "energy_balance": "POSITIVE",
+      "operational_years": 1.74,
+      "cost_is_lower_bound": true
+    },
+    {
+      "rank": 5,
+      "name": "1U Tech Demo (minimal)",
+      "usd_per_watt_year": 20400,
+      "total_mission_cost_usd": 93720,
+      "over_limit": false,
+      "mass_margin_kg": 1.201,
+      "energy_balance": "POSITIVE",
+      "operational_years": 1.14,
+      "cost_is_lower_bound": true
+    }
+  ]
+}

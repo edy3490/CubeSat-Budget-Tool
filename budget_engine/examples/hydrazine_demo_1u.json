@@ -1,0 +1,13 @@
+{
+  "name": "1U Hydrazine Propulsion Demo (too heavy for 1U)",
+  "form_factor": "1U",
+  "items": [
+    {"component_id": 1,  "quantity": 1},
+    {"component_id": 75, "quantity": 1},
+    {"component_id": 13, "quantity": 4},
+    {"component_id": 23, "quantity": 1},
+    {"component_id": 30, "quantity": 1},
+    {"component_id": 41, "quantity": 1},
+    {"component_id": 61, "quantity": 1}
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "name": "1U IoT Store-and-Forward Relay",
+  "form_factor": "1U",
+  "items": [
+    {"component_id": 1,  "quantity": 1},
+    {"component_id": 13, "quantity": 4},
+    {"component_id": 21, "quantity": 1},
+    {"component_id": 41, "quantity": 1},
+    {"component_id": 54, "quantity": 1},
+    {"component_id": 60, "quantity": 1, "duty_cycle": 0.25}
+  ]
+}

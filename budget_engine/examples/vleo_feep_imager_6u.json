@@ -1,0 +1,17 @@
+{
+  "name": "6U Very-Low-Orbit Imager with FEEP Drag Compensation",
+  "form_factor": "6U",
+  "mission": {"altitude_km": 350},
+  "items": [
+    {"component_id": 3,  "quantity": 1},
+    {"component_id": 14, "quantity": 2},
+    {"component_id": 20, "quantity": 1},
+    {"component_id": 30, "quantity": 2},
+    {"component_id": 40, "quantity": 1},
+    {"component_id": 51, "quantity": 1},
+    {"component_id": 60, "quantity": 1},
+    {"component_id": 64, "quantity": 1, "duty_cycle": 0.10},
+    {"component_id": 83, "quantity": 1},
+    {"component_id": 76, "quantity": 1, "duty_cycle": 0.10}
+  ]
+}
