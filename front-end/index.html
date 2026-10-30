@@ -168,6 +168,8 @@ details ol{margin:6px 0 2px;padding-left:20px;font-size:13.5px;display:flex;flex
               <button type="button" id="labelsBtn" aria-pressed="true" disabled>Labels</button>
               <button type="button" id="fitBtn" disabled>Reset view</button>
               <button type="button" id="regenBtn" disabled>Redraw</button>
+              <button type="button" id="stepBtn" disabled title="Download as a STEP file: named, coloured solid parts for CAD (SolidWorks, Fusion 360, FreeCAD, Onshape...)">Export STEP</button>
+              <button type="button" id="stlBtn" disabled title="Download as an STL mesh: for 3D printing and mesh tools; no part names or colours">Export STL</button>
             </div>
           </div>
           <div class="vfoot"><div class="budget" id="budget" hidden></div></div>
@@ -592,7 +594,7 @@ function renderPlan(plan){
 function showScene(sceneData, info){
   if (!viewer) return;
   viewer.load(sceneData);
-  ["explodeBtn", "explodeRange", "labelsBtn", "fitBtn"].forEach(id => $(id).disabled = false);
+  ["explodeBtn", "explodeRange", "labelsBtn", "fitBtn", "stepBtn", "stlBtn"].forEach(id => $(id).disabled = false);
   $("regenBtn").disabled = !llmOn || !!info.pending;
   $("regenBtn").textContent = info.source === "default" && !info.pending ? "Draw with AI" : "Redraw";
   const badge = $("vBadge");
@@ -725,6 +727,27 @@ if (viewer) {
     $("labelsBtn").setAttribute("aria-pressed", on); viewer.setLabels(on);
   });
   $("fitBtn").addEventListener("click", () => viewer.fit());
+  const exportModel = async (format, btn) => {
+    if (!current) return;
+    const label = btn.textContent;
+    btn.disabled = true; btn.textContent = "Exporting…";
+    try {
+      // Exports what's on screen: assembled, or exploded if the view is spread out.
+      const res = await fetch("/api/export", {method:"POST", headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({ design_id: current.design_id, format, exploded: viewer.exploded })});
+      if (!res.ok) { let d = ""; try { d = (await res.json()).detail || ""; } catch (e) {} throw new Error("Server returned " + res.status + (d ? ": " + d : "")); }
+      const name = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") || "")?.[1] || "cubesat." + format;
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(await res.blob()); a.download = name;
+      document.body.append(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    } catch (err) {
+      $("vNote").textContent = format.toUpperCase() + " export failed: " + err.message;
+    }
+    btn.disabled = false; btn.textContent = label;
+  };
+  $("stepBtn").addEventListener("click", e => exportModel("step", e.currentTarget));
+  $("stlBtn").addEventListener("click", e => exportModel("stl", e.currentTarget));
   $("regenBtn").addEventListener("click", async () => {
     let t = null; try { t = await (await fetch("/api/tokens")).json(); } catch (e) {}
     requestVisual(true, t?.active_model);
@@ -739,13 +762,54 @@ function addMsg(kind, text){
   return d;
 }
 
-function renderChips(){
-  ["Make it a 12U", "Raise the orbit to 700 km", "Add a methane spectrometer", "Extend to 3 years"].forEach(s => {
+// Follow-up suggestions. `skip` hides one that already matches the current design.
+// Most are worded so the keyword parser understands them too (size, km, years, orbit, payload).
+const SUGGESTIONS = [
+  { text: "Shrink it to 1U", skip: s => s.size_u === 1 },
+  { text: "Make it a 3U", skip: s => s.size_u === 3 },
+  { text: "Make it a 6U", skip: s => s.size_u === 6 },
+  { text: "Make it a 12U", skip: s => s.size_u === 12 },
+  { text: "Raise the orbit to 700 km", skip: s => s.altitude_km >= 700 },
+  { text: "Lower the orbit to 400 km", skip: s => s.altitude_km <= 400 },
+  { text: "Fly at 550 km", skip: s => s.altitude_km === 550 },
+  { text: "Move it to a sun-synchronous orbit", skip: s => s.orbit === "SSO" },
+  { text: "Make it a 6 month mission", skip: s => s.lifetime_years <= 0.5 },
+  { text: "Extend to 3 years", skip: s => s.lifetime_years >= 3 },
+  { text: "Extend to 5 years", skip: s => s.lifetime_years >= 5 },
+  { text: "Swap the payload for a camera", skip: s => s.payload === "camera" },
+  { text: "Make it a radio relay", skip: s => s.payload === "radio_relay" },
+  { text: "Add a methane spectrometer", skip: s => s.payload === "sensor" },
+  { text: "Carry a radiation sensor", skip: s => s.payload === "sensor" },
+  { text: "Add a thruster to hold its orbit" },
+  { text: "Make it as cheap as possible" },
+  { text: "Add an X-band downlink for more data" },
+  { text: "Use deployable solar panels" },
+  { text: "Point it more precisely" },
+];
+const CHIPS_SHOWN = 4;
+const chipOrder = SUGGESTIONS.map((_, i) => i);
+for (let i = chipOrder.length - 1; i > 0; i--) {               // shuffle once per page load
+  const j = Math.floor(Math.random() * (i + 1));
+  [chipOrder[i], chipOrder[j]] = [chipOrder[j], chipOrder[i]];
+}
+let chipNext = 0;
+
+// Show the next few suggestions in the shuffled pool, skipping ones the design already matches
+// and the one just sent. Called after every message, so the chips change each time.
+function renderChips(lastSent){
+  const shown = [];
+  for (let n = 0; n < chipOrder.length && shown.length < CHIPS_SHOWN; n++) {
+    const sug = SUGGESTIONS[chipOrder[chipNext]];
+    chipNext = (chipNext + 1) % chipOrder.length;
+    if (sug.text === lastSent || (sug.skip && spec && sug.skip(spec))) continue;
+    shown.push(sug.text);
+  }
+  $("chips").replaceChildren(...shown.map(text => {
     const c = document.createElement("button");
-    c.type = "button"; c.className = "chip"; c.textContent = s;
-    c.addEventListener("click", () => send(s));
-    $("chips").appendChild(c);
-  });
+    c.type = "button"; c.className = "chip"; c.textContent = text;
+    c.addEventListener("click", () => send(text));
+    return c;
+  }));
 }
 
 function showError(err){
@@ -786,6 +850,7 @@ async function send(text){
   }catch(err){
     typing.remove(); showError(err); history.pop();
   }
+  renderChips(text);
   setBusy(false); $("input").focus();
 }
 
@@ -802,6 +867,7 @@ async function reset(){
     showDesign(out, false);   // starter shows the quick layout; "Draw with AI" spends tokens only when asked
   }catch(err){ showError(err); }
   loading.remove();
+  renderChips();
 }
 
 /* ---------- landing -> workspace handoff (Jason's homepage) ---------- */
@@ -869,6 +935,7 @@ function openProject(p){
     fetch("/api/tokens").then(r => r.json()).then(t => { if (active === p) renderBudget(t); }).catch(() => {});
   }
   renderProjects();
+  renderChips();
   $("input").focus();
 }
 

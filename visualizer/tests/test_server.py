@@ -54,6 +54,27 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(v["source"], "default")       # offline: rule-based layout
         self.assertEqual(len(v["scene"]["parts"]), len(out["quick_scene"]["parts"]))
 
+    def export(self, body):
+        req = urllib.request.Request(self.base + "/api/export", method="POST", data=json.dumps(body).encode(),
+                                     headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req) as r:
+            return r.headers["Content-Disposition"], r.read()
+
+    def test_export_downloads_step_and_stl(self):
+        out = self.chat("3U camera cubesat")
+        disposition, step = self.export({"design_id": out["design_id"]})        # STEP is the default
+        self.assertIn("attachment", disposition)
+        self.assertTrue(disposition.endswith('.step"'))
+        self.assertTrue(step.startswith(b"ISO-10303-21;"))
+        self.assertEqual(step.count(b"NEXT_ASSEMBLY_USAGE_OCCURRENCE("), len(out["quick_scene"]["parts"]))
+        disposition, stl = self.export({"design_id": out["design_id"], "format": "stl"})
+        self.assertTrue(disposition.endswith('.stl"'))
+        self.assertEqual(len(stl), 84 + 50 * int.from_bytes(stl[80:84], "little"))
+        for body, code in (({"design_id": "nope"}, 404), ({"design_id": out["design_id"], "format": "obj"}, 400)):
+            with self.subTest(body=body), self.assertRaises(urllib.error.HTTPError) as e:
+                self.post("/api/export", body)
+            self.assertEqual(e.exception.code, code)
+
     def test_engine_codes_become_sentences(self):
         notes = [n[1] for n in self.chat("3U camera at 300 km for 3 years")["budget"]["notes"]]
         self.assertFalse(any(n.startswith(("UNPRICED", "PEAK_OVER_SOLAR", "THRUSTER_BATTERY_LIMITED")) for n in notes))
