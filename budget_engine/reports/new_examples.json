@@ -1,7 +1,7 @@
 {
   "report_type": "cubesat_budget",
   "schema_version": "1.0",
-  "generated_at": "2026-10-30T19:21:12+00:00",
+  "generated_at": "2026-10-30T21:00:17+00:00",
   "how_to_read": "Read 'summary' and 'warnings' first; details follow. Units in key names. cost_min_only=true: some parts unpriced. *_basis 'estimate' = unsourced.",
   "mission_assumptions": {
     "altitude_km": 500.0,
@@ -38,6 +38,7 @@
     "gyro": 1.0
   },
   "methodology": {
+    "required_subsystems": "Every build needs structure, solar, eps, battery (or an EPS with an integrated battery), obc and comms; builds with an imager also need attitude control. A vendor platform covers all of them. Incomplete builds rank after complete ones.",
     "mass": "Sum of quantity x unit mass, compared to the CubeSat Design Specification max mass for the form factor.",
     "power_generation": "orbit_avg = peak solar W x solar_derate x EPS efficiency x sunlit fraction (cylindrical shadow, beta=0 worst case).",
     "power_consumption": "orbit_avg = sum(peak W x duty_cycle). Duty cycles default per subsystem; override per item in a config file.",
@@ -54,7 +55,7 @@
         "id": null,
         "name": "1U IoT Store-and-Forward Relay",
         "form_factor": "1U",
-        "source": "budget_engine/examples/iot_relay_1u.json",
+        "source": "examples/iot_relay_1u.json",
         "mission_overrides": null
       },
       "summary": {
@@ -66,11 +67,16 @@
         "cost_usd": 97750,
         "cost_min_only": true,
         "years": 0.97,
-        "usd_per_watt_year": 25006
+        "usd_per_watt_year": 25006,
+        "complete": true
       },
       "warnings": [
         "UNPRICED: NanoMind A3200"
       ],
+      "required_subsystems": {
+        "complete": true,
+        "missing": []
+      },
       "mass_budget": {
         "total_mass_kg": 0.682,
         "structural_limit_kg": 2.0,
@@ -280,7 +286,7 @@
         "id": null,
         "name": "3U Hyperspectral Agriculture Imager",
         "form_factor": "3U",
-        "source": "budget_engine/examples/hyperspectral_3u.json",
+        "source": "examples/hyperspectral_3u.json",
         "mission_overrides": null
       },
       "summary": {
@@ -292,11 +298,16 @@
         "cost_usd": 290700,
         "cost_min_only": true,
         "years": 2.2,
-        "usd_per_watt_year": 9365
+        "usd_per_watt_year": 9365,
+        "complete": true
       },
       "warnings": [
         "UNPRICED: iOBC, Chameleon (MS/HS)"
       ],
+      "required_subsystems": {
+        "complete": true,
+        "missing": []
+      },
       "mass_budget": {
         "total_mass_kg": 3.695,
         "structural_limit_kg": 6.0,
@@ -550,7 +561,7 @@
         "id": null,
         "name": "6U Very-Low-Orbit Imager with FEEP Drag Compensation",
         "form_factor": "6U",
-        "source": "budget_engine/examples/vleo_feep_imager_6u.json",
+        "source": "examples/vleo_feep_imager_6u.json",
         "mission_overrides": {
           "altitude_km": 350.0
         }
@@ -564,13 +575,18 @@
         "cost_usd": 446490,
         "cost_min_only": true,
         "years": 4.87,
-        "usd_per_watt_year": 6284
+        "usd_per_watt_year": 6284,
+        "complete": true
       },
       "warnings": [
         "PEAK_OVER_SOLAR",
         "THRUSTER_BATTERY_LIMITED: 40.0/16.82 W",
         "UNPRICED: iOBC, XACT-100, MultiScape100 CIS, NANO (FEEP)"
       ],
+      "required_subsystems": {
+        "complete": true,
+        "missing": []
+      },
       "mass_budget": {
         "total_mass_kg": 6.088,
         "structural_limit_kg": 12.0,
@@ -869,7 +885,7 @@
         "id": null,
         "name": "1U Hydrazine Propulsion Demo (too heavy for 1U)",
         "form_factor": "1U",
-        "source": "budget_engine/examples/hydrazine_demo_1u.json",
+        "source": "examples/hydrazine_demo_1u.json",
         "mission_overrides": null
       },
       "summary": {
@@ -881,12 +897,17 @@
         "cost_usd": 93720,
         "cost_min_only": true,
         "years": 5.0,
-        "usd_per_watt_year": 4651
+        "usd_per_watt_year": 4651,
+        "complete": true
       },
       "warnings": [
         "OVER_MASS: +0.399 kg",
         "UNPRICED: 1U Hydrazine Module, NanoMind A3200"
       ],
+      "required_subsystems": {
+        "complete": true,
+        "missing": []
+      },
       "mass_budget": {
         "total_mass_kg": 2.399,
         "structural_limit_kg": 2.0,
@@ -1106,7 +1127,7 @@
         "id": null,
         "name": "6U High-Cadence Imaging + X-band (power-starved)",
         "form_factor": "6U",
-        "source": "budget_engine/examples/high_cadence_imaging_6u.json",
+        "source": "examples/high_cadence_imaging_6u.json",
         "mission_overrides": null
       },
       "summary": {
@@ -1118,13 +1139,18 @@
         "cost_usd": 443520,
         "cost_min_only": true,
         "years": 1.66,
-        "usd_per_watt_year": 18343
+        "usd_per_watt_year": 18343,
+        "complete": true
       },
       "warnings": [
         "ENERGY_NEGATIVE: -0.79 Wh/orbit",
         "PEAK_OVER_SOLAR",
         "UNPRICED: iOBC, XACT-100, Caiman"
       ],
+      "required_subsystems": {
+        "complete": true,
+        "missing": []
+      },
       "mass_budget": {
         "total_mass_kg": 5.058,
         "structural_limit_kg": 12.0,
@@ -1397,6 +1423,7 @@
       "usd_per_watt_year": 6284,
       "total_mission_cost_usd": 446490,
       "over_limit": false,
+      "complete": true,
       "mass_margin_kg": 5.912,
       "energy_balance": "POSITIVE",
       "operational_years": 4.87,
@@ -1408,6 +1435,7 @@
       "usd_per_watt_year": 9365,
       "total_mission_cost_usd": 290700,
       "over_limit": false,
+      "complete": true,
       "mass_margin_kg": 2.305,
       "energy_balance": "POSITIVE",
       "operational_years": 2.2,
@@ -1419,6 +1447,7 @@
       "usd_per_watt_year": 18343,
       "total_mission_cost_usd": 443520,
       "over_limit": false,
+      "complete": true,
       "mass_margin_kg": 6.942,
       "energy_balance": "NEGATIVE",
       "operational_years": 1.66,
@@ -1430,6 +1459,7 @@
       "usd_per_watt_year": 25006,
       "total_mission_cost_usd": 97750,
       "over_limit": false,
+      "complete": true,
       "mass_margin_kg": 1.318,
       "energy_balance": "POSITIVE",
       "operational_years": 0.97,
@@ -1441,6 +1471,7 @@
       "usd_per_watt_year": 4651,
       "total_mission_cost_usd": 93720,
       "over_limit": true,
+      "complete": true,
       "mass_margin_kg": -0.399,
       "energy_balance": "POSITIVE",
       "operational_years": 5.0,

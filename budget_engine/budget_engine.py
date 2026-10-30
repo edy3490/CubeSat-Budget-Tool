@@ -50,6 +50,22 @@ DEFAULT_DUTY_CYCLE = {
     "magnetometer": 1.0, "gyro": 1.0,
 }
 
+# Subsystems every build needs, and which database subsystems satisfy each one.
+# Vendor platforms (structure + bus) satisfy all of them. Batteries integrated into
+# an EPS board count as energy storage (see required_subsystems).
+REQUIRED_SUBSYSTEMS = {
+    "structure": {"structure", "platform"},
+    "solar": {"solar", "platform"},
+    "eps": {"eps", "platform"},
+    "battery": {"battery", "platform"},
+    "obc": {"obc", "platform"},
+    "comms": {"comms", "platform"},
+}
+# Required only when the build carries one of the listed subsystems.
+CONDITIONAL_SUBSYSTEMS = {
+    "adcs": ({"imager"}, {"adcs", "reaction_wheel", "magnetorquer", "platform"}),  # imagers must point
+}
+
 # Vallado exponential atmosphere (base altitude km, base density kg/m^3, scale height km)
 ATMOSPHERE = [
     (150, 2.070e-9, 22.523), (180, 5.464e-10, 29.740), (200, 2.789e-10, 37.105),
@@ -398,6 +414,16 @@ def propulsion_power_check(cfg: Configuration, power: dict, orbit: dict) -> dict
     }
 
 
+def required_subsystems(cfg: Configuration) -> dict:
+    present = {i.subsystem for i in cfg.items}
+    if any(i.total("energy_wh") for i in cfg.items):
+        present.add("battery")
+    missing = [need for need, ok in REQUIRED_SUBSYSTEMS.items() if not present & ok]
+    missing += [need for need, (trigger, ok) in CONDITIONAL_SUBSYSTEMS.items()
+                if present & trigger and not present & ok]
+    return {"complete": not missing, "missing": missing}
+
+
 def cost_efficiency(cost: dict, power: dict, orbit: dict, mass_kg: float) -> dict:
     total = cost["total_mission_cost_usd"]
     gen = power["orbit_avg_generation_w"]
@@ -436,6 +462,7 @@ def evaluate(conn, cfg: Configuration, p: MissionParams) -> dict:
     orb = orbit_budget(cfg, ff, mass["total_mass_kg"], orbit, p)
     prop_power = propulsion_power_check(cfg, power, orbit)
     eff = cost_efficiency(cost, power, orb, mass["total_mass_kg"])
+    needs = required_subsystems(cfg)
 
     # Terse CODE: detail strings so a reader can scan them cheaply.
     warnings = list(cfg.warnings)
@@ -451,8 +478,8 @@ def evaluate(conn, cfg: Configuration, p: MissionParams) -> dict:
     if prop_power and not prop_power["can_fire_on_solar_alone"]:
         warnings.append(f"THRUSTER_BATTERY_LIMITED: {prop_power['thruster_power_w']}/"
                         f"{prop_power['sunlit_surplus_for_thruster_w']} W")
-    if not any(i.subsystem == "eps" for i in cfg.items):
-        warnings.append("NO_EPS")
+    if needs["missing"]:
+        warnings.append(f"MISSING_SUBSYSTEM: {', '.join(needs['missing'])}")
     if cost["hardware_cost_is_lower_bound"]:
         warnings.append(f"UNPRICED: {', '.join(cost['components_without_price'])}")
     if mass["components_missing_mass"]:
@@ -468,6 +495,7 @@ def evaluate(conn, cfg: Configuration, p: MissionParams) -> dict:
         "cost_min_only": cost["hardware_cost_is_lower_bound"],
         "years": orb["operational_years"],
         "usd_per_watt_year": eff["usd_per_watt_year"],
+        "complete": needs["complete"],
     }
 
     return {
@@ -475,6 +503,7 @@ def evaluate(conn, cfg: Configuration, p: MissionParams) -> dict:
                           "mission_overrides": cfg.mission or None},
         "summary": summary,
         "warnings": warnings,
+        "required_subsystems": needs,
         "mass_budget": mass,
         "power_budget": power,
         "propulsion_power_check": prop_power,
@@ -493,6 +522,9 @@ def evaluate(conn, cfg: Configuration, p: MissionParams) -> dict:
 
 
 METHODOLOGY = {
+    "required_subsystems": "Every build needs structure, solar, eps, battery (or an EPS with an integrated battery), obc and comms; "
+                           "builds with an imager also need attitude control. A vendor platform covers all of them. "
+                           "Incomplete builds rank after complete ones.",
     "mass": "Sum of quantity x unit mass, compared to the CubeSat Design Specification max mass for the form factor.",
     "power_generation": "orbit_avg = peak solar W x solar_derate x EPS efficiency x sunlit fraction (cylindrical shadow, beta=0 worst case).",
     "power_consumption": "orbit_avg = sum(peak W x duty_cycle). Duty cycles default per subsystem; override per item in a config file.",
@@ -520,14 +552,17 @@ def build_report(reports: list[dict], p: MissionParams) -> dict:
         "configurations": reports,
     }
     if len(reports) > 1:
-        # Builds over the structural limit can't fly as specified, so they rank last.
+        # Builds over the structural limit or missing a core subsystem can't fly as specified,
+        # so they rank last; a missing part would otherwise make a build look cheaper.
         ranked = sorted(reports, key=lambda r: (r["mass_budget"]["over_limit"],
+                                                not r["required_subsystems"]["complete"],
                                                 r["cost_efficiency"]["usd_per_watt_year"] or float("inf")))
         out["comparison_ranked_by_usd_per_watt_year"] = [{
             "rank": n, "name": r["configuration"]["name"],
             "usd_per_watt_year": r["cost_efficiency"]["usd_per_watt_year"],
             "total_mission_cost_usd": r["cost_budget"]["total_mission_cost_usd"],
             "over_limit": r["mass_budget"]["over_limit"],
+            "complete": r["required_subsystems"]["complete"],
             "mass_margin_kg": r["mass_budget"]["margin_kg"],
             "energy_balance": r["power_budget"]["energy_balance"],
             "operational_years": r["orbit_and_propulsion"]["operational_years"],
