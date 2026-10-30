@@ -28,12 +28,12 @@ def _merge_previous(raw: dict, previous: Optional[SatSpec]) -> dict:
     """For follow-up edits in the fallback path: keep earlier values the new text didn't mention."""
     if previous is None:
         return raw
-    base = previous.model_dump(exclude={"assumed", "warnings", "off_topic", "mission_goal"})
+    base = previous.model_dump(exclude={"assumed", "warnings", "off_topic"})
     # Don't carry over values that were only defaults last time; let them stay "assumed".
     for key in previous.assumed:
         base.pop(key, None)
     raw = {k: v for k, v in raw.items() if k != "off_topic"}  # an edit like "make it 12U" is on topic
-    return {**base, **raw, "mission_goal": previous.mission_goal or raw.get("mission_goal", "")}
+    return {**base, **raw}
 
 
 def parse_idea(

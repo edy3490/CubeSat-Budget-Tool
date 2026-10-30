@@ -44,7 +44,7 @@ pip install -r requirements.txt
 ```bash
 pytest -m "not live"
 ```
-You should see `37 passed`. The live tests show as skipped, which is expected.
+You should see `40 passed`. The live tests show as skipped, which is expected.
 
 ```bash
 python -m sat_parser "6U camera cubesat in a polar orbit at 550 km for 18 months"
@@ -69,7 +69,7 @@ Open `.env` and replace `sk-ant-your-key-here` with your key. `.env` is in `.git
 ```bash
 pytest tests/test_live.py -v
 ```
-These 10 tests call the real model. Together they cost well under one cent. If one fails, read the assertion message; it prints the full spec the model produced.
+These 12 tests call the real model. Together they cost well under one cent. If one fails, read the assertion message; it prints the full spec the model produced.
 
 Now the demo uses the model:
 ```bash
@@ -94,6 +94,7 @@ What each field of `ParseResult` is for:
 - `spec.off_topic`: if true, reply "Describe a satellite idea" instead of running the budget.
 - `spec.assumed`: fields that were filled with defaults. Show them in the UI ("Assumed: 3U, 500 km").
 - `spec.warnings`: values that were changed to fit (e.g. 5U snapped to 6U). Show these too.
+- `spec.mission_goal`: what the satellite is for, e.g. "Image wildfires". Empty when the user didn't say; show "Goal: not stated". Only the model fills it; the keyword fallback always leaves it empty.
 - `source`: `"llm"` or `"fallback"`. Handy to display small in a corner during the demo.
 - `error`: why the fallback was used, for debugging.
 

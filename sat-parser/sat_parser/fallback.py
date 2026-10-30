@@ -57,5 +57,5 @@ def keyword_parse(text: str) -> dict:
     if "payload" not in out and "size_u" not in out and not any(w in t for w in SPACE_WORDS):
         out["off_topic"] = True
 
-    out["mission_goal"] = text.strip()[:200]
+    # mission_goal stays unset: keywords can't tell what the satellite is for.
     return out

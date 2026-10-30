@@ -43,3 +43,8 @@ def test_known_limit_weather_question_looks_like_a_sensor():
 
 def test_space_words_prevent_off_topic():
     assert keyword_parse("I want to launch something into orbit").get("off_topic") is not True
+
+
+def test_fallback_never_sets_mission_goal():
+    # Keywords can't tell what a satellite is for, so the goal is left for the model.
+    assert "mission_goal" not in keyword_parse("6U CubeSat with a camera to image wildfires")

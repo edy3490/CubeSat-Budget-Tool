@@ -43,7 +43,7 @@ class SatSpec(BaseModel):
     orbit: Orbit
     altitude_km: int
     lifetime_years: float
-    mission_goal: str = Field(default="", description="One-line summary of what it is for")
+    mission_goal: str = Field(default="", description="What it is for, e.g. 'Image wildfires'. Empty if the user didn't say")
     notes: str = Field(default="", description="Anything the user asked for that doesn't fit a field")
     off_topic: bool = Field(default=False, description="True if the text isn't a satellite idea")
     assumed: list[str] = Field(default_factory=list, description="Fields filled from DEFAULTS")

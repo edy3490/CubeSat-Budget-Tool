@@ -49,6 +49,16 @@ def test_live_miles_are_converted():
     assert 540 <= spec.altitude_km <= 590   # 350 mi is about 563 km
 
 
+def test_live_mission_goal_is_the_purpose():
+    spec = parse_idea("6U CubeSat that images wildfires from a polar orbit").spec
+    assert "wildfire" in spec.mission_goal.lower(), spec
+
+
+def test_live_mission_goal_empty_when_purpose_not_stated():
+    spec = parse_idea("cubesat w/ cam, polar orbit, ~350 miles up").spec
+    assert spec.mission_goal == "", spec
+
+
 def test_live_off_topic():
     assert parse_idea("give me a recipe for banana bread").spec.off_topic is True
 

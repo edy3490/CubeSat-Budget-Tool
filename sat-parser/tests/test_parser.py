@@ -110,3 +110,17 @@ def test_followup_does_not_freeze_earlier_defaults():
     first = parse_idea("6U camera cubesat", use_llm=False).spec      # altitude was assumed
     second = parse_idea("make it 12U", previous=first, use_llm=False).spec
     assert "altitude_km" in second.assumed                             # still shown as an assumption
+
+
+# ---------- mission_goal ----------
+
+def test_fallback_leaves_mission_goal_empty():
+    spec = parse_idea("6U camera cubesat in a polar orbit at 550 km", use_llm=False).spec
+    assert spec.mission_goal == ""
+
+
+def test_followup_in_fallback_keeps_earlier_goal(fake_client):
+    client = fake_client(tool_input={"size_u": 6, "payload": "camera", "mission_goal": "Image wildfires"})
+    first = parse_idea("6U camera sat to image wildfires", client=client).spec
+    second = parse_idea("make it 12U", previous=first, use_llm=False).spec
+    assert second.mission_goal == "Image wildfires"

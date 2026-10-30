@@ -41,7 +41,7 @@ SPEC_TOOL = {
                       "description": "LEO for general low orbit, SSO for sun-synchronous. Omit if not stated."},
             "altitude_km": {"type": "number", "description": "Orbit altitude in km. Omit if not stated."},
             "lifetime_years": {"type": "number", "description": "Mission lifetime in years. Omit if not stated."},
-            "mission_goal": {"type": "string", "description": "One short sentence: what the satellite is for."},
+            "mission_goal": {"type": "string", "description": "One short sentence: what the satellite is for (e.g. 'Image wildfires'). Omit if the user didn't say what it is for; don't describe the hardware here."},
             "notes": {"type": "string", "description": "Requests that don't fit the other fields."},
             "off_topic": {"type": "boolean", "description": "True if the text isn't a satellite idea."},
         },
