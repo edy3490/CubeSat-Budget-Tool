@@ -44,6 +44,10 @@ DEFAULT_DUTY_CYCLE = {
     "propulsion": 0.10,  # firing time per orbit
     "gnss": 1.0,         # continuous fix; lower it if the receiver is cycled
     "antenna_uhf": 0.0, "antenna_l": 0.0, "antenna_s": 0.0, "antenna_x": 0.0,  # passive
+    "reaction_wheel": 0.10,  # power_w is PEAK; steady-state draw is a small fraction
+    "magnetorquer": 0.30,    # momentum dumping / detumble
+    "star_tracker": 1.0, "sun_sensor": 1.0, "horizon_sensor": 1.0,
+    "magnetometer": 1.0, "gyro": 1.0,
 }
 
 # Vallado exponential atmosphere (base altitude km, base density kg/m^3, scale height km)

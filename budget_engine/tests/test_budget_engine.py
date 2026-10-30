@@ -100,6 +100,15 @@ class BudgetEngineTest(unittest.TestCase):
         self.assertAlmostEqual(fitted["mass_budget"]["total_mass_kg"]
                                - plain["mass_budget"]["total_mass_kg"], 0.024 + 0.017, places=3)
 
+    def test_wheels_use_peak_power_duty_and_sensors_run_continuously(self):
+        base = [{"component_id": 2}, {"component_id": 11, "quantity": 2}, {"component_id": 22}]
+        plain = run(base)
+        adcs = run(base + [{"component_id": 54, "quantity": 3},   # CubeWheel CW0017, 0.85 W peak
+                           {"component_id": 512}])                # NanoAvionics ST-1, 1.2 W
+        added = (adcs["power_budget"]["orbit_avg_consumption_w"]
+                 - plain["power_budget"]["orbit_avg_consumption_w"])
+        self.assertAlmostEqual(added, 3 * 0.85 * 0.10 + 1.2, places=2)
+
     def test_cli_writes_json(self):
         with tempfile.TemporaryDirectory() as d:
             out = Path(d) / "r.json"

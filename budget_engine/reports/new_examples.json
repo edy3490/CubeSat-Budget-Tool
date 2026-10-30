@@ -1,7 +1,7 @@
 {
   "report_type": "cubesat_budget",
   "schema_version": "1.0",
-  "generated_at": "2026-10-30T18:27:59+00:00",
+  "generated_at": "2026-10-30T19:21:12+00:00",
   "how_to_read": "Read 'summary' and 'warnings' first; details follow. Units in key names. cost_min_only=true: some parts unpriced. *_basis 'estimate' = unsourced.",
   "mission_assumptions": {
     "altitude_km": 500.0,
@@ -23,7 +23,19 @@
     "adcs": 1.0,
     "comms": 0.15,
     "imager": 0.15,
-    "propulsion": 0.1
+    "propulsion": 0.1,
+    "gnss": 1.0,
+    "antenna_uhf": 0.0,
+    "antenna_l": 0.0,
+    "antenna_s": 0.0,
+    "antenna_x": 0.0,
+    "reaction_wheel": 0.1,
+    "magnetorquer": 0.3,
+    "star_tracker": 1.0,
+    "sun_sensor": 1.0,
+    "horizon_sensor": 1.0,
+    "magnetometer": 1.0,
+    "gyro": 1.0
   },
   "methodology": {
     "mass": "Sum of quantity x unit mass, compared to the CubeSat Design Specification max mass for the form factor.",
@@ -42,7 +54,7 @@
         "id": null,
         "name": "1U IoT Store-and-Forward Relay",
         "form_factor": "1U",
-        "source": "examples/iot_relay_1u.json",
+        "source": "budget_engine/examples/iot_relay_1u.json",
         "mission_overrides": null
       },
       "summary": {
@@ -50,7 +62,7 @@
         "limit_kg": 2.0,
         "margin_kg": 1.318,
         "energy": "POSITIVE",
-        "net_w": 2.52,
+        "net_w": 2.58,
         "cost_usd": 97750,
         "cost_min_only": true,
         "years": 0.97,
@@ -72,7 +84,7 @@
           "eps": 0.184,
           "structure": 0.12,
           "comms": 0.094,
-          "adcs": 0.06,
+          "reaction_wheel": 0.06,
           "obc": 0.024
         },
         "components_missing_mass": []
@@ -81,20 +93,20 @@
         "solar_peak_generation_w": 9.6,
         "sunlit_usable_generation_w": 6.48,
         "orbit_avg_generation_w": 4.03,
-        "orbit_avg_consumption_w": 1.51,
-        "net_orbit_avg_power_w": 2.52,
-        "net_energy_per_orbit_wh": 3.97,
-        "net_energy_per_day_wh": 60.5,
+        "orbit_avg_consumption_w": 1.45,
+        "net_orbit_avg_power_w": 2.58,
+        "net_energy_per_orbit_wh": 4.06,
+        "net_energy_per_day_wh": 61.8,
         "energy_balance": "POSITIVE",
-        "generation_to_consumption_ratio": 2.67,
-        "peak_consumption_all_on_w": 4.51,
+        "generation_to_consumption_ratio": 2.77,
+        "peak_consumption_all_on_w": 5.22,
         "peak_exceeds_sunlit_generation": false,
         "eps_conversion_efficiency_pct": 90.0,
         "battery": {
           "capacity_wh": 22.5,
           "usable_wh_at_max_dod": 6.75,
-          "eclipse_energy_needed_wh": 0.9,
-          "eclipse_depth_of_discharge_pct": 4.0,
+          "eclipse_energy_needed_wh": 0.87,
+          "eclipse_depth_of_discharge_pct": 3.9,
           "max_allowed_dod_pct": 30.0,
           "survives_eclipse": true
         },
@@ -122,10 +134,10 @@
           },
           {
             "component": "CubeWheel Small (Gen1)",
-            "subsystem": "adcs",
-            "peak_w": 0.14,
-            "duty_cycle": 1.0,
-            "orbit_avg_w": 0.142
+            "subsystem": "reaction_wheel",
+            "peak_w": 0.85,
+            "duty_cycle": 0.1,
+            "orbit_avg_w": 0.085
           }
         ]
       },
@@ -237,15 +249,15 @@
           "id": 54,
           "name": "CubeWheel Small (Gen1)",
           "vendor": "CubeSpace",
-          "subsystem": "adcs",
+          "subsystem": "reaction_wheel",
           "quantity": 1,
           "unit_mass_kg": 0.06,
           "mass_basis": "vendor",
           "unit_cost_usd": 5000.0,
           "cost_basis": "estimate",
-          "unit_peak_power_w": 0.142,
+          "unit_peak_power_w": 0.85,
           "unit_generation_w": null,
-          "duty_cycle": 1.0
+          "duty_cycle": 0.1
         },
         {
           "id": 60,
@@ -268,7 +280,7 @@
         "id": null,
         "name": "3U Hyperspectral Agriculture Imager",
         "form_factor": "3U",
-        "source": "examples/hyperspectral_3u.json",
+        "source": "budget_engine/examples/hyperspectral_3u.json",
         "mission_overrides": null
       },
       "summary": {
@@ -538,7 +550,7 @@
         "id": null,
         "name": "6U Very-Low-Orbit Imager with FEEP Drag Compensation",
         "form_factor": "6U",
-        "source": "examples/vleo_feep_imager_6u.json",
+        "source": "budget_engine/examples/vleo_feep_imager_6u.json",
         "mission_overrides": {
           "altitude_km": 350.0
         }
@@ -857,7 +869,7 @@
         "id": null,
         "name": "1U Hydrazine Propulsion Demo (too heavy for 1U)",
         "form_factor": "1U",
-        "source": "examples/hydrazine_demo_1u.json",
+        "source": "budget_engine/examples/hydrazine_demo_1u.json",
         "mission_overrides": null
       },
       "summary": {
@@ -1094,7 +1106,7 @@
         "id": null,
         "name": "6U High-Cadence Imaging + X-band (power-starved)",
         "form_factor": "6U",
-        "source": "examples/high_cadence_imaging_6u.json",
+        "source": "budget_engine/examples/high_cadence_imaging_6u.json",
         "mission_overrides": null
       },
       "summary": {

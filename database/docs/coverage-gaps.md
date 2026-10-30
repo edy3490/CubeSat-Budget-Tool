@@ -19,7 +19,6 @@ Imaging payloads are outside its scope.
 | Batteries | 7 vendors | Aerospacelab, Astro Digital, Argotec (ELEKTRA), Berlin Space Technologies, Dragonfly Aerospace, EaglePicher, EnduroSat, Ibeos, Saft, SatRev, SkyLabs, Space Dynamics Lab, Vectronic (3-5) |
 | OBC | ISISPACE, GomSpace, German Orbital Systems | AAC Clyde Space (Kryten-M3, Sirius), Alén Space (DARA), Aitech, Aerospacelab, Argotec (FERMI), Berlin Space Technologies (CDH-110), Bradford Space, C3S, CesiumAstro, Emxys (ODALISS), EnduroSat (OBC I/II, GPC), GomSpace (NanoMind HP MK3), Ibeos (EDGE-1100), Innoflight (CFC-400), KP Labs (Antelope), and more; the table continues (8-4) |
 | ADCS (integrated) | Blue Canyon, CubeSpace, Tensor Tech, Serenum | AAC Clyde Space (iADCS-200/400), Arcsec (Arcus), Berlin Space Technologies (iADCS-100); Blue Canyon XACT-50 is a missing model (5-2) |
-| Reaction wheels | CubeSpace (Gen1 only) | AAC Clyde Space, Astrofein, Berlin Space Technologies, Blue Canyon, Comat, GomSpace, NanoAvionics, NewSpace Systems, Rocket Lab, Space Inventor, Vectronic, VEOWARE; the current CubeSpace CubeWheel CW0017–CW40K line (5-3) |
 | Comms (radios) | EnduroSat, ISISPACE, AAC Clyde Space | GomSpace (AX100, NanoCom SDR), AstroDev (Helium/Lithium/Beryllium), Alén Space (TOTEM, TREVO), NanoAvionics, SkyLabs, Spacemanic, Satlab (SRS-3/4), Syrlinks (EWC27/31), IQ Spacecom (HISPICO), Tethers Unlimited (SWIFT), Vulcan Wireless, CesiumAstro, Innoflight, Space Inventor, CUBECOM, Quasonix, Emxys, SatRev, SENyT, Orion Space, Dragonfly, L3Harris, Iridium/Globalstar modems (NAL Research, NearSpace Launch, sci_Zone) (9-3) |
 | Propulsion | 8 vendors | Benchmark Space Systems, Dawn Aerospace, ECAPS, Stellar Exploration, Rubicon, NanoAvionics (EPSS), Tethers Unlimited, GomSpace (NanoProp), ThrustMe, T4i, Aurora Propulsion, Pale Blue, SteamJet, Bradford, Morpheus Space, Exotrail, ExoTerra, Orbion, Aliena, Phase Four, Comat, Hypernova, Mars Space, Neumann Space, Miles Space, Moog, Marotta; Busek BHT/BET/CMNT and Enpulsion Micro R3/Neo are missing models (4-2 to 4-12) |
 | Bus platforms | EnduroSat, GomSpace | AAC Clyde Space, Blue Canyon, Deimos, Exobotics, FOSSA, German Orbital Systems, Gran Systems, GUMUSH, Harpy, HEX20, Hydra, Innova, ISISPACE, NanoAvionics, NearSpace Launch, NPC Spacemind, Orbital Astronautics, Orion Space, Pumpkin, Quub, SatRev, SFL Missions, Space Inventor, Spacemanic, U-Space (2-3); 6U adds Argotec, Astro Digital, Nara Space, Space Dynamics Lab, Terran Orbital (2-4) |
@@ -31,10 +30,6 @@ Each needs a subsystem row and a comparison metric before it can be ranked.
 
 | Category | Manufacturers in SoA | Suggested efficiency metric |
 |---|---|---|
-| Star trackers (5-5) | Arcsec, BAE Systems, Berlin Space Technologies, AAC Clyde Space, Blue Canyon, Creare, CubeSpace, DTU, Jena-Optronik, Leonardo, NanoAvionics, Redwire, Rocket Lab, Sodern, Solar MEMS, Space Inventor, Space Micro, Terma, Vectronic | Accuracy (arcsec), lower is better |
-| Magnetorquers (5-4) | AAC Clyde Space, CubeSpace, GomSpace, ISISPACE, MEISEI, NanoAvionics, NewSpace Systems, Rocket Lab, Space Inventor, ZARM Technik | Dipole per W (Am²/W) |
-| Sun sensors (5-7) | AAC Clyde Space, Berlin Space Technologies, Bradford Space, CubeSpace, GomSpace, Lens R&D, Needronix, NewSpace Systems, Redwire, Solar MEMS, Space Inventor, Space Micro | Accuracy (deg) |
-| Magnetometers, gyros, horizon sensors (5-6, 5-8, 5-9) | Several; not itemized | Noise / accuracy |
 | Optical comms terminals (9-4) | AAC Clyde Space (CubeCat), DLR (OSIRIS4CubeSat), CACI, Mynaric, Emxys (ODALCOM), MIT (CLICK; research) | Data rate per W |
 | Deployers (10-2) | Cal Poly, COMAT, Dhruva Space, Exolaunch, Gran Systems, ISISPACE, Maverick Space Systems, NPC Spacemind, Rocket Lab (CSD), Tyvak, UARX Space, Voyager/NanoRacks, Xterra | Launch hardware; affects launch cost, not the bus |
 | Thermal control (7-x) | Coatings, MLI, straps, heaters, TECs | Usually mission-specific; low priority |
@@ -53,3 +48,12 @@ Each needs a subsystem row and a comparison metric before it can be ranked.
 - **Antennas** (`antenna_uhf`, `antenna_l`, `antenna_s`, `antenna_x`, ids 320-391): 62 Table 9-2 rows. Skipped:
   Ku/K/Ka antennas (no matching radios in the database), deployables over ~2 kg (MMA LAMBDA, MMA reflectarrays,
   Oxford C-band and Ka reflectors, CesiumAstro L-band phased array), and Anteral 2211-301-01 (no numeric data).
+- **ADCS actuators and sensors** (ids 400-608, NASA Tables 5-3 to 5-9): 44 reaction wheels, 37 magnetorquers,
+  24 star trackers, 31 sun sensors, 4 horizon sensors, 10 magnetometers, 19 gyros/IMUs. Existing CubeWheels
+  (rows 54, 55) moved from `adcs` to `reaction_wheel`; row 54 is the CW0017. Skipped: units over ~2 kg;
+  misaligned rows (NewSpace NRWA wheels, Trillian-1, Space Inventor MIST and IMU-P4); reseller duplicates
+  (Space Inventor WHL wheels and ASTRO CL, NovAtel OEM-IMU-STIM300); spin-stabilized and accelerometer-only sensors.
+- Still missing from GNC: Space Inventor reaction wheels (only reseller listings or >2 kg) and NewSpace Systems
+  wheels (source columns misaligned).
+- Row 75 (1U hydrazine module) is labelled "Rocket Lab (ex-L3Harris/Aerojet)"; NASA Table 4-2 lists the MPS-120
+  under Aerojet Rocketdyne. Current ownership unverified.

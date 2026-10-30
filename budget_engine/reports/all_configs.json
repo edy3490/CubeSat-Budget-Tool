@@ -1,7 +1,7 @@
 {
   "report_type": "cubesat_budget",
   "schema_version": "1.0",
-  "generated_at": "2026-10-30T18:43:04+00:00",
+  "generated_at": "2026-10-30T19:21:12+00:00",
   "how_to_read": "Read 'summary' and 'warnings' first; details follow. Units in key names. cost_min_only=true: some parts unpriced. *_basis 'estimate' = unsourced.",
   "mission_assumptions": {
     "altitude_km": 500.0,
@@ -28,7 +28,14 @@
     "antenna_uhf": 0.0,
     "antenna_l": 0.0,
     "antenna_s": 0.0,
-    "antenna_x": 0.0
+    "antenna_x": 0.0,
+    "reaction_wheel": 0.1,
+    "magnetorquer": 0.3,
+    "star_tracker": 1.0,
+    "sun_sensor": 1.0,
+    "horizon_sensor": 1.0,
+    "magnetometer": 1.0,
+    "gyro": 1.0
   },
   "methodology": {
     "mass": "Sum of quantity x unit mass, compared to the CubeSat Design Specification max mass for the form factor.",
