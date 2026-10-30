@@ -5,9 +5,12 @@ How it picks:
   2. Options for the payload, pointing (ADCS), power (solar + EPS + batteries) and,
      if needed, propulsion.
   3. Try combinations in order (best payload first, cheapest power first) and keep the
-     first one that passes the budget engine's mass, power, eclipse and lifetime checks.
+     first one that passes the budget engine's mass, power, eclipse and lifetime checks and
+     physically fits inside the frame (the 3D layout's column packing, so both agree).
      It tries comfortable margins first, then tight ones. If nothing passes, it returns
      the closest attempt with the problems listed.
+  4. If nothing works at the requested size: an assumed size moves up to the next one that
+     works; a size the user chose stays, with a note naming the smallest size that works.
 
 Where the table has nothing to rank by (e.g. no prices for flight computers), a part is
 hand-picked below with the reason next to it.
@@ -19,6 +22,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from ._paths import DB_PATH, be
+from visualizer.scene import inside_fit
 
 # --------------------------------------------------------------------------- hand-picked parts
 OBC_ID = 41                      # NanoMind A3200: lowest power draw of the flight computers
@@ -200,8 +204,10 @@ def adcs_options(cat: Catalog, spec) -> list[list[Pick]]:
         return [[Pick("pointing (ADCS)", cat.get(i),
                       why="3-axis pointing to aim the camera" if i != ADCS_LAST_RESORT
                       else "single wheel only; nothing 3-axis fit")] for i in ids]
+    # Last resort, when nothing else fits (a full 1U): no unit at all. Passive magnetic stabilization
+    # (a magnet and hysteresis rods on the frame) is common on small satellites that needn't point.
     return [[Pick("pointing (ADCS)", cat.get(i), why="basic attitude control is enough for this payload")]
-            for i in ADCS_BASIC]
+            for i in ADCS_BASIC] + [[]]
 
 
 def power_options(cat: Catalog, size: int) -> list[list[Pick]]:
@@ -250,13 +256,46 @@ def _quick_check(cfg, ff, orbit, params, tier: Tier):
     return passes, penalty, mass
 
 
+def _layout_parts(picks: list[Pick]) -> list[dict]:
+    """Picks as the design-style part dicts the 3D layout reads."""
+    return [{"slot": p.slot, "part": p.component["name"], "unit_mass_kg": p.component["mass_kg"],
+             "quantity": p.quantity, "peak_power_w": (p.component["power_w"] or 0) * p.quantity or None,
+             "estimated_placeholder": bool(p.component.get("placeholder"))} for p in picks]
+
+
+def _fit(picks: list[Pick], ff: dict) -> tuple[float, float, str]:
+    """(stack height needed, height available, verdict) for the inside parts, in mm."""
+    return inside_fit(_layout_parts(picks), [float(v) for v in ff["envelope_mm"].split("x")])
+
+
 def _orbit(cfg, ff, mass_kg, orbit, params) -> dict:
     return be.orbit_budget(cfg, ff, mass_kg, orbit, params)
 
 
+SIZES = tuple(sorted(SOLAR_LAYOUTS))
+
+
 def design(spec, conn=None) -> Design:
-    """Pick parts for a SatSpec and run the budget engine on them."""
+    """Pick parts for a SatSpec and run the budget engine on them. If nothing works at the
+    requested size, an assumed size moves up; a chosen one stays, with a note."""
     conn = conn or be.connect(DB_PATH)
+    d = _search(spec, conn)
+    if d.closes:
+        return d
+    for size in (s for s in SIZES if s > spec.size_u):
+        bigger = _search(spec.model_copy(update={"size_u": size}), conn)
+        if not bigger.closes:
+            continue
+        if "size_u" in spec.assumed:
+            bigger.decisions.insert(0, f"A {spec.size_u}U was too small for these parts, so this is a {size}U.")
+            return bigger
+        d.decisions.append(f"Nothing in the parts table makes a {spec.size_u}U work for this mission; "
+                           f"the smallest size that does is {size}U.")
+        break
+    return d
+
+
+def _search(spec, conn) -> Design:
     cat = Catalog(conn)
     size, code = spec.size_u, f"{spec.size_u}U"
     ff = cat.form_factors[code]
@@ -293,6 +332,10 @@ def design(spec, conn=None) -> Design:
                         picks = core + payload + adc + pw + prop
                         cfg = _config(name, code, picks)
                         passes, penalty, mass = _quick_check(cfg, ff, orbit, params, tier)
+                        if passes:
+                            need, room, verdict = _fit(picks, ff)
+                            if verdict == "does_not_fit":
+                                passes, penalty = False, penalty + need / room - 1
                         if not passes:
                             if best is None or penalty < best[0]:
                                 best = (penalty, picks)
@@ -310,6 +353,10 @@ def design(spec, conn=None) -> Design:
                                        if alt and alt > spec.altitude_km else ""))
                             if payload is not payloads[0]:
                                 decisions.append("Best payload option didn't fit; used the next one that does.")
+                            if not adc:
+                                decisions.append("No attitude-control unit: none fit alongside the other parts, so it "
+                                                 "relies on passive magnetic stabilization (a magnet and hysteresis rods "
+                                                 "on the frame). Fine for a payload that needn't point.")
                             return _finish(conn, spec, name, code, picks, params, tier.name, decisions)
                         shortfall = 1.0 + (spec.lifetime_years - years) / spec.lifetime_years
                         if best is None or shortfall < best[0]:
@@ -338,7 +385,7 @@ def _altitude_for_lifetime(years: float, ballistic: float, scale: float) -> Opti
     return int(math.ceil(hi / 10) * 10)
 
 
-def _checks(spec, report: dict, picks: list[Pick], params) -> list[dict]:
+def _checks(spec, report: dict, picks: list[Pick], params, ff: dict) -> list[dict]:
     mass, power = report["mass_budget"], report["power_budget"]
     orb, cost = report["orbit_and_propulsion"], report["cost_budget"]
     checks = []
@@ -382,6 +429,10 @@ def _checks(spec, report: dict, picks: list[Pick], params) -> list[dict]:
         add("Deorbit", "fail", f"natural decay takes {'50+' if natural >= be.LIFETIME_CAP_YEARS else f'{natural:g}'} yrs, over the {FCC_DEORBIT_YEARS:g}-yr rule; "
                                "fly lower or add a deorbit device")
 
+    need, room, verdict = _fit(picks, ff)
+    add("Fits inside", {"fits": "pass", "tight": "warn", "does_not_fit": "fail"}[verdict],
+        f"inside parts need about {need:.0f} mm stacked; the frame has {room:.0f} mm")
+
     if any(p.slot == "pointing (ADCS)" and p.component["id"] == ADCS_LAST_RESORT for p in picks) \
             and spec.payload == "camera":
         add("Pointing", "warn", "only a single reaction wheel fit; the camera can't be aimed precisely")
@@ -397,5 +448,6 @@ def _checks(spec, report: dict, picks: list[Pick], params) -> list[dict]:
 
 def _finish(conn, spec, name, code, picks, params, tier, decisions) -> Design:
     report = be.evaluate(conn, _config(name, code, picks), params)
+    ff = dict(conn.execute("SELECT * FROM form_factor WHERE code = ?", (code,)).fetchone())
     return Design(spec=spec, name=name, form_factor=code, picks=picks, params=params, tier=tier,
-                  report=report, checks=_checks(spec, report, picks, params), decisions=decisions)
+                  report=report, checks=_checks(spec, report, picks, params, ff), decisions=decisions)

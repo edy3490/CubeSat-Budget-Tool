@@ -173,6 +173,11 @@ _add("iEPS Type A (2-cell battery)", "ISISPACE", "stack", "power board with two 
      + [box((6 + sx * 34, 0, 12.6), (3, 62, 20), "black") for sx in (-1, 1)]
      + chips(1.6, [(-30, 40, 10, 6), (34, -42, 8, 5)]))
 
+_add("iEPS Type B (4-cell battery)", "ISISPACE", "stack", "power board with four 18650 cells on own +z",
+     card() + [cyl((6, y, 12.6), 18.5, 65, "white", "x") for y in (-30, -10, 10, 30)]
+     + [box((6 + sx * 34, 0, 12.6), (3, 82, 20), "black") for sx in (-1, 1)]
+     + chips(1.6, [(-30, 44, 10, 5), (34, -44, 8, 4)]))
+
 _add("Battery Pack 2S2P", "NanoAvionics", "stack", "four 18650 cells lying on a board, own +z = top",
      card() + [cyl((6, y, 12.6), 18.5, 65, "white", "x") for y in (-30, -10, 10, 30)]
      + [box((6 + sx * 34.5, 0, 12.6), (4, 84, 20), "black") for sx in (-1, 1)]              # cell holders

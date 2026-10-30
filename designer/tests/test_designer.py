@@ -40,10 +40,39 @@ class DesignerTest(unittest.TestCase):
         self.assertEqual(d["cost"]["total_usd"], priced + d["cost"]["launch_usd"])
         self.assertTrue(d["cost"]["is_minimum"])  # imagers have no public price
 
-    def test_1u_camera_fits_under_2kg(self):
-        d = go("1U camera cubesat").data["design"]
-        self.assertEqual(d["status"], "closes")
-        self.assertLessEqual(d["swap"]["weight"]["total_kg"], 2.0)
+    def test_1u_camera_does_not_fit_and_says_3u_does(self):
+        # The smallest camera in the table is taller than a 1U's inside on its own.
+        r = go("1U camera cubesat")
+        d = r.data["design"]
+        self.assertEqual((d["form_factor"], d["status"]), ("1U", "does_not_close"))   # the size the user chose stays
+        self.assertEqual(check(r, "Fits inside")["status"], "fail")
+        self.assertTrue(any("smallest size that does is 3U" in x for x in d["decisions"]))
+
+    def test_1u_beacon_fits_without_a_reaction_wheel(self):
+        r = go("1U beacon")
+        d = r.data["design"]
+        self.assertEqual((d["form_factor"], d["status"]), ("1U", "closes"))
+        self.assertNotEqual(check(r, "Fits inside")["status"], "fail")
+        self.assertNotIn("pointing (ADCS)", parts(r))
+        self.assertTrue(any("passive magnetic stabilization" in x for x in d["decisions"]))
+        bench = next(ph for ph in r.data["build_plan"]["phases"] if ph["phase"].startswith("Bench build"))
+        self.assertTrue(any("passive magnet" in st for st in bench["steps"]))
+
+    def test_an_assumed_size_moves_up_when_nothing_fits(self):
+        from sat_parser.schema import normalize
+        from designer.configurator import design
+        spec = normalize({"payload": "camera"}).model_copy(update={"size_u": 1})   # size still marked assumed
+        d = design(spec)
+        self.assertEqual(d.form_factor, "3U")
+        self.assertTrue(d.closes)
+        self.assertIn("A 1U was too small", d.decisions[0])
+
+    def test_every_design_that_closes_fits_inside(self):
+        for idea in ("1U beacon", "1U radio relay", "3U camera cubesat", "3U sensor", "6U camera", "12U camera",
+                     "3U camera at 300 km for 3 years", "3U radio relay at 600 km, needs a thruster"):
+            r = go(idea)
+            if r.data["design"]["status"] == "closes":
+                self.assertNotEqual(check(r, "Fits inside")["status"], "fail", idea)
 
     def test_6u_camera_uses_x_band(self):
         self.assertIn("X-Band", parts(go("6U camera cubesat"))["downlink radio"]["part"])

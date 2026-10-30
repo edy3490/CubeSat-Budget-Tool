@@ -18,10 +18,16 @@ def test_stated_values_are_kept_and_not_marked_assumed():
     assert spec.assumed == []
 
 
-def test_odd_size_snaps_to_nearest_form_factor_with_warning():
+def test_odd_size_rounds_up_to_a_form_factor_with_warning():
     spec = normalize({"size_u": 5})
     assert spec.size_u == 6
     assert any("5U" in w for w in spec.warnings)
+
+
+def test_2u_rounds_up_to_3u_not_down_to_1u():
+    spec = normalize({"size_u": 2})
+    assert spec.size_u == 3
+    assert any("2" in w and "3U" in w for w in spec.warnings)
 
 
 def test_huge_size_snaps_to_12u():

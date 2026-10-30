@@ -667,6 +667,55 @@ def _columns(env: list[float]) -> list[tuple[float, float, float, float]]:
     return [(-x / 2 + x / nx * (i + .5), -y / 2 + y / ny * (j + .5), w, d) for i in range(nx) for j in range(ny)]
 
 
+def _pack(items: list[dict], env: list[float]):
+    """Pack the inside parts into board columns: from the bottom up, thrusters from the top down.
+    Boards carry their own standoffs, so parts sit 1 mm apart; a camera's baffle goes through the
+    bottom face. Used by the default layout and by the designer's will-it-fit check, so both agree.
+
+    Returns (slots, need, room): slots = [(info, kind, library entry or None, (cx, cy, cz), (w, d, h))],
+    and the fullest column's stack height against the height it has."""
+    Z = env[2]
+    cols = _columns(env)
+    floor, ceiling = inside_z(env)
+    bottom = [floor] * len(cols)
+    start = [floor] * len(cols)              # lower for a column whose camera pokes through the bottom
+    top = [ceiling] * len(cols)
+    order = {"imager": 0, "payload_box": 0, "adcs": 1, "board": 2, "battery": 3}
+    inside = sorted((i for i in items if kind_of(i["part"]) in order), key=lambda i: order[kind_of(i["part"])])
+    slots = []
+    for info in inside + [i for i in items if kind_of(i["part"]) == "thruster"]:
+        k = kind_of(info["part"])
+        e = lookup(info["part"]["part"], info["part"]["unit_mass_kg"])
+        h = e["size"][2] if e else _height_mm(info["part"], k)
+        if k == "thruster":
+            c = max(range(len(cols)), key=lambda j: top[j])
+            cz = top[c] - h / 2
+            top[c] -= h + GAP_MM
+        else:
+            c = min(range(len(cols)), key=lambda j: bottom[j])
+            if k == "imager" and bottom[c] == floor:
+                bottom[c] = start[c] = -Z / 2 - BAFFLE_MM
+            cz = bottom[c] + h / 2
+            bottom[c] += h + GAP_MM
+        cx, cy, w, d = cols[c]
+        slots.append((info, k, e, (cx, cy, cz), (w, d, h)))
+    use = [(bottom[j] - start[j] + ceiling - top[j] - GAP_MM, ceiling - start[j]) for j in range(len(cols))]
+    need, room = max(use, key=lambda u: u[0] / u[1])
+    return slots, need, room
+
+
+def fit_verdict(need: float, room: float) -> str:
+    # Within 5% over still counts as tight: real stacks can sit closer than these drawings.
+    return "does_not_fit" if need > room * 1.05 else "tight" if need > room * 0.92 else "fits"
+
+
+def inside_fit(parts: list[dict], envelope_mm: list[float]) -> tuple[float, float, str]:
+    """Will these parts (design-style dicts: slot, part, unit_mass_kg, quantity, peak_power_w,
+    estimated_placeholder) fit inside the frame? Returns (need_mm, room_mm, verdict)."""
+    _, need, room = _pack(instances({"parts": parts}), envelope_mm)
+    return need, room, fit_verdict(need, room)
+
+
 def default_scene(design: dict) -> dict:
     """Rule-based layout from the part library. Shown instantly, and used when no model is available.
 
@@ -688,29 +737,9 @@ def default_scene(design: dict) -> dict:
     def entry_of(info):
         return lookup(info["part"]["part"], info["part"]["unit_mass_kg"])
 
-    # Inside: packed into columns from the bottom up; thrusters from the top down. Boards carry
-    # their own standoffs, so parts sit 1 mm apart; a camera's baffle goes through the bottom face.
-    cols = _columns(env)
-    floor, ceiling = inside_z(env)
-    bottom = [floor] * len(cols)
-    start = [floor] * len(cols)              # lower for a column whose camera pokes through the bottom
-    top = [ceiling] * len(cols)
-    order = {"imager": 0, "payload_box": 0, "adcs": 1, "board": 2, "battery": 3}
-    inside = sorted((i for i in items if kind_of(i["part"]) in order), key=lambda i: order[kind_of(i["part"])])
-    for info in inside + [i for i in items if kind_of(i["part"]) == "thruster"]:
-        k, e = kind_of(info["part"]), entry_of(info)
-        h = e["size"][2] if e else _height_mm(info["part"], k)
-        if k == "thruster":
-            c = max(range(len(cols)), key=lambda j: top[j])
-            cz = top[c] - h / 2
-            top[c] -= h + GAP_MM
-        else:
-            c = min(range(len(cols)), key=lambda j: bottom[j])
-            if k == "imager" and bottom[c] == floor:
-                bottom[c] = start[c] = -Z / 2 - BAFFLE_MM
-            cz = bottom[c] + h / 2
-            bottom[c] += h + GAP_MM
-        cx, cy, w, d = cols[c]
+    # Inside: packed into columns (see _pack).
+    slots, need, room = _pack(items, env)
+    for info, k, e, (cx, cy, cz), (w, d, h) in slots:
         if e:
             put(info, e, (cx, cy, cz))
         else:
@@ -795,11 +824,7 @@ def default_scene(design: dict) -> dict:
         else:
             add(info, [_box((0, yc, zc), (side, h, side), "copper")])
 
-    # Volume check: does the fullest column's stack fit between the end frames?
-    use = [(bottom[j] - start[j] + ceiling - top[j] - GAP_MM, ceiling - start[j]) for j in range(len(cols))]
-    need, room = max(use, key=lambda u: u[0] / u[1])
-    # Within 5% over still counts as tight: real stacks can sit closer than these drawings.
-    verdict = "does_not_fit" if need > room * 1.05 else "tight" if need > room * 0.92 else "fits"
+    verdict = fit_verdict(need, room)
     fit_note = f"Stacked, the inside parts need about {need:.0f} mm and the frame has {room:.0f} mm"
     if need > room:
         fit_note += (f"; {need - room:.0f} mm over, so it only fits with closer board spacing than these drawings use"

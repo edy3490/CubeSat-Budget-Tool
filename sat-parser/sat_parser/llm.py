@@ -34,7 +34,7 @@ SPEC_TOOL = {
         "type": "object",
         "properties": {
             "size_u": {"type": "integer", "enum": list(ALLOWED_SIZES),
-                       "description": "CubeSat size in U. Omit if not stated."},
+                       "description": "CubeSat size in U. Omit if not stated. For a size not in the list (2U, 4U), use the next larger one."},
             "payload": {"type": "string", "enum": list(PAYLOADS),
                         "description": "Main instrument. camera = imaging; radio_relay = communications; sensor = measuring something (radiation, magnetic field, weather)."},
             "orbit": {"type": "string", "enum": list(ORBITS),

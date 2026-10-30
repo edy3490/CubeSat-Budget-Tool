@@ -112,8 +112,11 @@ def build_plan(d) -> dict:
     steps = [f"Connect {label(named('power system (EPS)')[0])}"
              + (f" and {label(named('battery')[0])}" if named("battery") else "")
              + f" to {label(named('flight computer')[0])} on the bench.",
-             f"Bring up {label(named('command radio (UHF)')[0])} and talk to it from a ground station.",
-             f"Test {label(named('pointing (ADCS)')[0])} with simulated sensors (hardware-in-the-loop)."]
+             f"Bring up {label(named('command radio (UHF)')[0])} and talk to it from a ground station."]
+    if named("pointing (ADCS)"):
+        steps.append(f"Test {label(named('pointing (ADCS)')[0])} with simulated sensors (hardware-in-the-loop).")
+    else:
+        steps.append("Check the passive magnet's strength and the hysteresis rods' placement against the attitude simulation.")
     if d.spec.payload == "camera":
         link = f" over the {label(downlink[0])}" if downlink else ""
         steps.append(f"Connect {label(payload)}, take test images and send a full image{link}.")

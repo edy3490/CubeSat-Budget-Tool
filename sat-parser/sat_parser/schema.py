@@ -51,12 +51,13 @@ class SatSpec(BaseModel):
 
 
 def _snap_size(value) -> tuple[int, Optional[str]]:
-    """Round a size to the nearest allowed form factor. Returns (size, warning or None)."""
+    """Round a size up to the next allowed form factor (a 2U's worth of parts won't fit in a 1U),
+    or down to the largest. Returns (size, warning or None)."""
     try:
         v = float(value)
     except (TypeError, ValueError):
         return DEFAULTS["size_u"], f"Couldn't read size {value!r}; used {DEFAULTS['size_u']}U"
-    best = min(ALLOWED_SIZES, key=lambda s: abs(s - v))
+    best = min((s for s in ALLOWED_SIZES if s >= v), default=max(ALLOWED_SIZES))
     if best != v:
         return best, f"Size {value}U isn't a supported form factor; used {best}U"
     return best, None
