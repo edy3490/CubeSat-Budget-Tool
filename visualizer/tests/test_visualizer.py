@@ -15,6 +15,9 @@ from visualizer import SceneGenerator, TokenBudget, default_scene, repair
 from visualizer import library
 from visualizer.budget import HAIKU_MODEL, SONNET_MODEL
 from visualizer.placement import body_size, place
+from visualizer import scene as sc
+from visualizer.generator import build_prompt
+from visualizer.placement import bbox
 from visualizer.scene import REACH_MM, envelope, instances
 
 
@@ -163,6 +166,81 @@ class RepairTest(Base):
         self.assertTrue(all(v > 0 for v in shape["size"]))
         self.assertEqual(s["fit"]["verdict"], "unknown")
         self.assertTrue(any("missing" in n for n in notes))
+
+
+class InsideTheFrameTest(Base):
+    """Inside parts the model leaves sticking out of the frame are moved back in."""
+
+    def setUp(self):
+        super().setUp()
+        self.six = design("A 6U CubeSat that images wildfires for 1 year")
+
+    def inside(self, scene, d):
+        return [p for p in scene["parts"] if p["part_index"] >= 0 and sc._inside_part(p, d)]
+
+    def assert_all_inside_and_apart(self, scene, d):
+        parts = self.inside(scene, d)
+        self.assertEqual([p["label"] for p in parts if sc._sticks_out(p, scene["envelope_mm"])], [])
+        boxes = [bbox(p["shapes"]) for p in parts]
+        for i, a in enumerate(boxes):
+            for b in boxes[i + 1:]:
+                self.assertFalse(sc._overlap(a, b, 1))
+
+    def test_a_good_layout_is_left_alone(self):
+        s = default_scene(self.six)
+        before = json.dumps(s)
+        self.assertEqual(sc.pull_inside(s, self.six), [])
+        self.assertEqual(json.dumps(s), before)
+
+    def test_one_board_too_high_moves_to_free_space(self):
+        s = default_scene(self.six)
+        board = next(p for p in self.inside(s, self.six) if p["label"] == "OEM719")
+        lo, hi = bbox(board["shapes"])
+        sc._move_to(board, (lo, hi), ([lo[0], lo[1], lo[2] + 400], [hi[0], hi[1], hi[2] + 400]))
+        others = {p["ref"]: json.dumps(p["shapes"]) for p in s["parts"] if p is not board}
+        notes = sc.pull_inside(s, self.six)
+        self.assertEqual(notes, ["Moved back inside the frame: OEM719"])
+        self.assert_all_inside_and_apart(s, self.six)
+        self.assertEqual({p["ref"]: json.dumps(p["shapes"]) for p in s["parts"] if p is not board}, others)
+
+    def test_one_tall_stack_in_a_6u_is_split_into_columns(self):
+        # What Sonnet did: every board in one column down the middle, running out of the top.
+        s = default_scene(self.six)
+        z = -envelope(self.six)[2] / 2 - 1
+        for p in sorted(self.inside(s, self.six), key=lambda p: bbox(p["shapes"])[0][2]):
+            lo, hi = bbox(p["shapes"])
+            w = [(hi[k] - lo[k]) / 2 for k in range(2)]
+            sc._move_to(p, (lo, hi), ([-w[0], -w[1], z], [w[0], w[1], z + hi[2] - lo[2]]))
+            z += hi[2] - lo[2] + 1
+        shared = self.inside(s, self.six)[0]["shapes"]                  # as if carried over from an earlier scene
+        notes = sc.pull_inside(s, self.six)
+        self.assertTrue(notes[0].startswith("Re-stacked the inside parts in columns"))
+        self.assert_all_inside_and_apart(s, self.six)
+        self.assertIsNot(self.inside(s, self.six)[0]["shapes"], shared)  # new shapes, the old ones untouched
+        cam = next(p for p in self.inside(s, self.six) if sc.kind_of(self.six["parts"][p["part_index"]]) == "imager")
+        self.assertLess(bbox(cam["shapes"])[0][2], -envelope(self.six)[2] / 2)   # lens still out the bottom
+
+    def test_prompt_gives_the_columns_and_the_stack_height(self):
+        line = next(l for l in build_prompt(self.six, instances(self.six), []).split("\n") if l.startswith("Inside:"))
+        self.assertIn("[[0, -57], [0, 57]]", line)
+        self.assertIn("split them across the columns", line)
+
+    def test_model_layout_sticking_out_is_fixed_before_it_is_returned(self):
+        g, client = self.gen(designs=[self.six])
+        orig = client.create
+
+        def create(**kw):        # the model pushes a board out of the top
+            resp = orig(**kw)
+            data = json.loads(resp.content[0].text)
+            for p in data["parts"]:
+                if p["ref"] == "p4":
+                    p["pos"][2] += 400
+            resp.content[0].text = json.dumps(data)
+            return resp
+        client.create = create
+        out = g.generate(self.six)
+        self.assertTrue(any("inside the frame" in n or "Re-stacked" in n for n in out["repairs"]))
+        self.assert_all_inside_and_apart(out["scene"], self.six)
 
 
 class ModelPlacesLibraryPartsTest(Base):

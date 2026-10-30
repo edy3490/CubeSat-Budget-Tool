@@ -65,7 +65,7 @@ Most parts come from a part library and are already drawn. You only place them:
 - A row with "same_as" is another copy of that part, with the same size and note. Give it "role": "" (the first copy's role covers it).
 
 How to lay it out:
-- Stack the inside modules along z inside the envelope, about 1 mm apart (boards include their standoffs). On 6U/12U, use side-by-side stacks where the envelope is wide enough.
+- Stack the inside modules along z, about 1 mm apart (boards include their standoffs), in the board columns the request lists, and only within its inside z range. When the stack needs more height than that, split it across the columns side by side.
 - Camera at the bottom with its lens out through the -z face (its baffle may stick out of the face by about 12 mm). Thrusters at an end with the nozzle pointing out.
 - Body solar panels lie flat on the long faces just outside the rails. Panels too wide for a face, and deployable arrays, are wings at the +z end reaching outward.
 - UHF antenna modules go on an end face (+z first, a second one on -z). The GNSS patch faces +z (on top of the UHF module is fine). The downlink patch faces Earth: on the -z face if it is free, but when there is a camera (its lens fills the -z face) put the patch on a side face near the -z end (for example up -y, just outside any panel on that face).
@@ -179,7 +179,14 @@ def build_prompt(design: dict, todo: list[dict], kept: list[dict], request: dict
         lines.append(f"Mission goal: {json.dumps(request['goal'])}")
     if request.get("notes"):
         lines.append(f"Other requests: {json.dumps(request['notes'])}")
-    lines += [f"Form factor: {design['form_factor']}", f"Envelope [x, y, z] mm: {sc.envelope(design)}",
+    env = sc.envelope(design)
+    lo, hi = sc.inside_z(env)
+    need = sc.inside_stack_mm(design)
+    cols = [[round(c[0]), round(c[1])] for c in sc._columns(env)]
+    lines += [f"Form factor: {design['form_factor']}", f"Envelope [x, y, z] mm: {env}",
+              f"Inside: z from {lo:g} to {hi:g} ({hi - lo:g} mm). Board columns, centers [x, y]: {cols}. "
+              f"The inside parts need about {need:.0f} mm stacked"
+              + (", more than one column holds, so split them across the columns." if need > hi - lo and len(cols) > 1 else "."),
               f"Satellite: {design['name']}"]
     drawn = [{"name": e["name"], "size": e["size"], "purpose": e.get("purpose", "")[:80]}
              for e in library.generated_extras()[:MAX_DRAWN_EXTRAS]]
@@ -416,6 +423,7 @@ class SceneGenerator:
                                "explode": [0, 0, 0], "shapes": place(local, pos, up, spin),
                                "place": {"pos": pos, "up": up, "spin": spin}, "role": meta["purpose"], "extra": meta}
         fixed["parts"] += list(extras.values())
+        repairs += sc.pull_inside(fixed, design)            # nothing inside may stick out of the frame
 
         d = raw.get("description") if isinstance(raw.get("description"), dict) else {}
         fixed["description"] = {"overview": str(d.get("overview") or "")[:1500], "layout": str(d.get("layout") or "")[:1500]}

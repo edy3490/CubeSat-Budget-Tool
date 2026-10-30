@@ -16,7 +16,7 @@ from __future__ import annotations
 import math
 
 from .library import lookup
-from .placement import auto_explode, place
+from .placement import auto_explode, bbox, place
 
 KINDS = ("box", "cylinder")
 AXES = ("x", "y", "z")
@@ -127,9 +127,6 @@ def repair(raw: dict, design: dict) -> tuple[dict, list[str]]:
             parts.append(fallback[ref])
 
     parts.sort(key=lambda p: list(want).index(p["ref"]))
-    outside = [p["label"] for p in parts if _inside_part(p, design) and _sticks_out(p, env)]
-    if outside:
-        notes.append("Placed partly outside the frame: " + ", ".join(outside))
 
     fit = raw.get("fit") if isinstance(raw.get("fit"), dict) else {}
     verdict = fit.get("verdict") if fit.get("verdict") in ("fits", "tight", "does_not_fit") else "unknown"
@@ -169,7 +166,132 @@ def _label(info: dict) -> str:
 
 
 def _inside_part(scene_part: dict, design: dict) -> bool:
-    return kind_of(design["parts"][scene_part["part_index"]]) in ("board", "battery", "adcs", "imager", "payload_box")
+    return kind_of(design["parts"][scene_part["part_index"]]) in INSIDE_KINDS
+
+
+INSIDE_KINDS = ("board", "battery", "adcs", "imager", "payload_box")
+
+
+def inside_stack_mm(design: dict) -> float:
+    """Height the inside parts need stacked in one column, 1 mm apart."""
+    hs = []
+    for i in instances(design):
+        k = kind_of(i["part"])
+        if k in INSIDE_KINDS:
+            e = lookup(i["part"]["part"], i["part"]["unit_mass_kg"])
+            hs.append(e["size"][2] if e else _height_mm(i["part"], k))
+    return sum(hs) + GAP_MM * max(len(hs) - 1, 0)
+
+
+def inside_z(env: list[float]) -> tuple[float, float]:
+    """The z range inside parts may use (the default layout's floor and ceiling)."""
+    return -env[2] / 2 + 6, env[2] / 2 - 6
+
+
+def pull_inside(scene: dict, design: dict) -> list[str]:
+    """Move inside parts the model left sticking out of the frame back in. Changes scene in place.
+
+    First each offending part is moved to the nearest free spot (its own column or another one).
+    If one can't be placed, the whole inside stack is re-stacked in columns like the default
+    layout, keeping the model's bottom-to-top order. Returns notes about what was changed.
+    """
+    env = scene["envelope_mm"]
+    X, Y, Z = env
+    floor, ceiling = inside_z(env)
+
+    def inside(p):
+        if p.get("extra"):     # an added part counts when the model put it inside the frame
+            lo, hi = bbox(p["shapes"])
+            return all(abs(lo[k] + hi[k]) / 2 < env[k] / 2 - 5 for k in range(3))
+        return p.get("part_index", -1) >= 0 and _inside_part(p, design)
+
+    stack = [p for p in scene["parts"] if p["shapes"] and inside(p)]
+    out = [p for p in stack if _sticks_out(p, env)]
+    if not out:
+        return []
+    names = ", ".join(p["label"] for p in out)
+    box = {id(p): bbox(p["shapes"]) for p in stack}
+
+    def size(p):
+        lo, hi = box[id(p)]
+        return [hi[k] - lo[k] for k in range(3)]
+
+    def target(p, cx, cy, z0):
+        sz = size(p)
+        return ([cx - sz[0] / 2, cy - sz[1] / 2, z0], [cx + sz[0] / 2, cy + sz[1] / 2, z0 + sz[2]])
+
+    def in_xy(p, cx, cy):
+        sz = size(p)
+        return abs(cx) + sz[0] / 2 <= X / 2 + 1 and abs(cy) + sz[1] / 2 <= Y / 2 + 1
+
+    # 1. Move just the offending parts, each to the free spot nearest where the model put it.
+    cols = [(c[0], c[1]) for c in _columns(env)]
+    taken = [box[id(p)] for p in stack if p not in out]
+    moves = {}
+    for p in sorted(out, key=lambda p: box[id(p)][0][2]):
+        lo, hi = box[id(p)]
+        here = [(lo[k] + hi[k]) / 2 for k in range(3)]
+        best = None
+        for cx, cy in [(here[0], here[1])] + cols:
+            if not in_xy(p, cx, cy):
+                continue
+            for z0 in sorted({floor} | {b[1][2] + GAP_MM for b in taken}):
+                cand = target(p, cx, cy, z0)
+                if cand[1][2] > ceiling:
+                    break
+                if not any(_overlap(cand, b) for b in taken):
+                    dist = math.dist(here, [(cand[0][k] + cand[1][k]) / 2 for k in range(3)])
+                    if best is None or dist < best[0]:
+                        best = (dist, cand)
+                    break
+        if best is None:
+            moves = None
+            break
+        moves[id(p)] = best[1]
+        taken.append(best[1])
+    if moves is not None:
+        for p in out:
+            _move_to(p, box[id(p)], moves[id(p)])
+        return [f"Moved back inside the frame: {names}"]
+
+    # 2. Re-stack everything inside in columns (the camera first, lens out the bottom).
+    cells = [(X / len({c[0] for c in cols}), Y / len({c[1] for c in cols}))]
+    order = sorted(stack, key=lambda p: (0 if not p.get("extra") and kind_of(design["parts"][p["part_index"]]) in ("imager", "payload_box") else 1,
+                                         box[id(p)][0][2]))
+    bottom, new = [floor] * len(cols), {}
+    for p in order:
+        sz = size(p)
+        imager = not p.get("extra") and kind_of(design["parts"][p["part_index"]]) == "imager"
+        if sz[0] <= cells[0][0] + 2 and sz[1] <= cells[0][1] + 2:     # fits one column
+            c = min(range(len(cols)), key=lambda j: bottom[j])
+            if imager and bottom[c] == floor:
+                bottom[c] = -Z / 2 - BAFFLE_MM
+            new[id(p)] = target(p, *cols[c], bottom[c])
+            bottom[c] += sz[2] + GAP_MM
+        else:                                                           # too wide: spans every column
+            z0 = max(bottom)
+            new[id(p)] = target(p, 0, 0, z0)
+            bottom = [z0 + sz[2] + GAP_MM] * len(cols)
+    if max(b[1][2] for b in new.values()) > ceiling + 1:
+        scene["fit"] = {"verdict": "does_not_fit",
+                        "note": f"The inside parts need about {inside_stack_mm(design):.0f} mm of stacking, more than the frame holds."}
+        return [f"Still partly outside the frame (not enough room inside): {names}"]
+    for p in stack:
+        _move_to(p, box[id(p)], new[id(p)])
+    return [f"Re-stacked the inside parts in columns: {names} stuck out of the frame"]
+
+
+def _overlap(a, b, tol: float = 0.5) -> bool:
+    return all(min(a[1][k], b[1][k]) - max(a[0][k], b[0][k]) > tol for k in range(3))
+
+
+def _move_to(p: dict, old, new) -> None:
+    """Shift a part so its bounding box goes from old to new. Builds new shape dicts: the old
+    ones may be shared with an earlier scene (edits carry parts over)."""
+    d = [new[0][k] - old[0][k] for k in range(3)]
+    p["shapes"] = [{**s, "center": [round(s["center"][k] + d[k], 1) for k in range(3)]} for s in p["shapes"]]
+    if isinstance(p.get("place"), dict) and isinstance(p["place"].get("pos"), list):
+        p["place"] = {**p["place"], "pos": [round(p["place"]["pos"][k] + d[k], 1) for k in range(3)]}
 
 
 def _sticks_out(scene_part: dict, env: list[float], slack: float = 15) -> bool:
@@ -288,7 +410,7 @@ def default_scene(design: dict) -> dict:
     # Inside: packed into columns from the bottom up; thrusters from the top down. Boards carry
     # their own standoffs, so parts sit 1 mm apart; a camera's baffle goes through the bottom face.
     cols = _columns(env)
-    floor, ceiling = -Z / 2 + 6, Z / 2 - 6
+    floor, ceiling = inside_z(env)
     bottom = [floor] * len(cols)
     start = [floor] * len(cols)              # lower for a column whose camera pokes through the bottom
     top = [ceiling] * len(cols)
