@@ -1,0 +1,15 @@
+{
+  "name": "Overloaded 3U (example)",
+  "form_factor": "3U",
+  "items": [
+    {"component_id": 2,  "quantity": 1},
+    {"component_id": 10, "quantity": 2},
+    {"component_id": 23, "quantity": 1},
+    {"component_id": 41, "quantity": 1},
+    {"component_id": 50, "quantity": 1},
+    {"component_id": 61, "quantity": 1},
+    {"component_id": 64, "quantity": 1, "duty_cycle": 0.3},
+    {"component_id": 80, "quantity": 1, "duty_cycle": 0.5},
+    {"component_id": 74, "quantity": 1, "duty_cycle": 0.3}
+  ]
+}

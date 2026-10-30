@@ -1,0 +1,14 @@
+{
+  "name": "3U Hyperspectral Agriculture Imager",
+  "form_factor": "3U",
+  "items": [
+    {"component_id": 4,  "quantity": 1},
+    {"component_id": 11, "quantity": 2},
+    {"component_id": 22, "quantity": 1},
+    {"component_id": 40, "quantity": 1},
+    {"component_id": 52, "quantity": 1},
+    {"component_id": 61, "quantity": 1},
+    {"component_id": 62, "quantity": 1, "duty_cycle": 0.10},
+    {"component_id": 80, "quantity": 1, "duty_cycle": 0.20}
+  ]
+}

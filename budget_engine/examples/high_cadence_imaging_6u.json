@@ -1,0 +1,15 @@
+{
+  "name": "6U High-Cadence Imaging + X-band (power-starved)",
+  "form_factor": "6U",
+  "items": [
+    {"component_id": 3,  "quantity": 1},
+    {"component_id": 14, "quantity": 2},
+    {"component_id": 20, "quantity": 1},
+    {"component_id": 30, "quantity": 1},
+    {"component_id": 40, "quantity": 1},
+    {"component_id": 51, "quantity": 1},
+    {"component_id": 60, "quantity": 1},
+    {"component_id": 64, "quantity": 1, "duty_cycle": 0.40},
+    {"component_id": 82, "quantity": 1, "duty_cycle": 0.50}
+  ]
+}
