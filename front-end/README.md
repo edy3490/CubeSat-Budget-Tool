@@ -1,5 +1,26 @@
 # CubeSat Budget Tool: index.html reference
 
+## Current version (served by `server.py`)
+
+Run `sat-parser/.venv/bin/python server.py` from the repo root and open http://localhost:8000. The page is a thin client: the server owns the spec and all the numbers.
+
+| Call | Body | Returns |
+|---|---|---|
+| `POST /api/budget` | `{}` | Starter design: `{spec, budget, design, build_plan, quick_scene, tokens}` (`reply` is null) |
+| `POST /api/cubesat-chat` | `{messages, spec}` | Same fields plus `reply`. Send back the `spec` from the last response; it carries a `design_id` for follow-up edits |
+| `POST /api/visual` | `{design_id, regenerate}` | 3D scene drawn by Sonnet (Haiku after 25k tokens), see `visualizer/README.md` |
+| `GET /api/tokens` | | Sonnet token budget |
+
+Errors come back as `{"detail": "..."}`. `budget` keeps the shape `render(b)` expects (`mass`, `maxMass`, `massRatio`, `massState`, `watts`, `powRatio`, `powState`, `cost`, `rows`, `notes`), filled from real parts by `designer/`. Extra fields: `gen`, `hardware`, `launch`, `costIsMinimum`, `unpriced`, and per row `part_index`, `gen_w`, `estimate` (`k` is null when a part has no public price).
+
+On top of the original layout the page adds a **3D model** (in place of the stack sketch) and a **build plan**:
+
+- The 3D model shows a quick rule-based layout first, then the model's drawing. It has explode/assemble, a spread slider, part labels and hover details, and hovering a table row highlights its part.
+- The Sonnet token meter is shown in the corner of the 3D view.
+- The starter design never spends tokens; click **Draw with AI** to have it drawn.
+
+> Sections 2-6 below describe the earlier standalone version (built-in parts tables, demo parser, Model settings). The page no longer has those; the server does that work now.
+
 `index.html` is the whole app: markup, styles and script in one file. There is no build step and no dependencies. The only external request is the IBM Plex fonts from Google Fonts, and the page falls back to system fonts if they don't load.
 
 ## 1. How it works

@@ -10,8 +10,12 @@ LEAD_WEEKS = {
     "adcs": (12, 20), "comms": (8, 14), "gnss": (6, 10), "imager": (16, 26), "propulsion": (20, 36),
     "antenna_uhf": (6, 10), "antenna_l": (6, 10), "antenna_s": (6, 10), "antenna_x": (6, 10),
     "payload_tbd": (12, 24),
+    # ADCS parts bought separately
+    "reaction_wheel": (8, 16), "magnetorquer": (6, 10), "star_tracker": (16, 26),
+    "sun_sensor": (6, 12), "horizon_sensor": (8, 14), "magnetometer": (6, 10), "gyro": (8, 14),
 }
-AVIONICS = {"eps", "battery", "obc", "comms", "adcs", "gnss"}  # needed on the bench first
+ADCS_PARTS = {"adcs", "reaction_wheel", "magnetorquer", "star_tracker", "sun_sensor", "horizon_sensor", "magnetometer", "gyro"}
+AVIONICS = {"eps", "battery", "obc", "comms", "gnss"} | ADCS_PARTS  # needed on the bench first
 
 DESIGN_WEEKS = 3        # requirements, interfaces, design review
 FLATSAT_WEEKS = 6       # bench integration and flight software
