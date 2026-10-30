@@ -78,7 +78,8 @@ def llm_parse(text: str, client, previous: Optional[SatSpec] = None) -> tuple[di
     resp = client.messages.create(
         model=MODEL,
         max_tokens=MAX_TOKENS,
-        system=SYSTEM_PROMPT,
+        # The tool and system prompt are the same every call: cache them (read back at a tenth of the price).
+        system=[{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
         tools=[SPEC_TOOL],
         tool_choice={"type": "tool", "name": "set_spec"},
         messages=[{"role": "user", "content": _build_user_message(text, previous)}],

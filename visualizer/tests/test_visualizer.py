@@ -172,7 +172,7 @@ class ModelPlacesLibraryPartsTest(Base):
         self.assertEqual((out["source"], out["mode"], out["drawn"]), ("sonnet", "full", 0))
         call = client.calls[0]
         rows = json.loads(call["messages"][0]["content"].rsplit("\n", 1)[-1])
-        self.assertTrue(all("library" in r for r in rows))
+        self.assertTrue(all("library" in r for r in rows if "same_as" not in r))
         # The scene has the library's full detail even though the model sent no shapes.
         want = sum(len(p["shapes"]) for p in default_scene(self.d)["parts"])
         self.assertEqual(sum(len(p["shapes"]) for p in out["scene"]["parts"]), want)
@@ -200,6 +200,54 @@ class ModelPlacesLibraryPartsTest(Base):
         self.assertEqual(out["saved"], ["OEM719"])
         saved = json.loads((self.generated / "oem719.json").read_text())
         self.assertEqual((saved["kind"], saved["drawn_by"], saved["vendor"]), ("catalog", SONNET_MODEL, "NovAtel"))
+
+
+class TokenSavingTest(Base):
+    def test_copies_are_described_once_and_share_a_role(self):
+        g, client = self.gen()
+        orig = client.create
+
+        def create(**kw):        # the model leaves later copies' role empty, as asked
+            resp = orig(**kw)
+            data = json.loads(resp.content[0].text)
+            for p in data["parts"]:
+                if "." in p["ref"] and not p["ref"].endswith(".1"):
+                    p["role"] = ""
+            resp.content[0].text = json.dumps(data)
+            return resp
+        client.create = create
+        out = g.generate(self.d)
+        rows = json.loads(client.calls[0]["messages"][0]["content"].rsplit("\n", 1)[-1])
+        copies = [r for r in rows if "same_as" in r]
+        self.assertTrue(copies)                                   # the test design has repeated parts
+        for r in copies:
+            self.assertEqual(set(r), {"ref", "copy", "same_as"})  # no repeated part details
+            self.assertTrue(r["same_as"].endswith(".1"))
+        self.assertTrue(all(p.get("role") for p in out["scene"]["parts"]))
+
+    def test_static_prefix_is_cached_and_cache_reads_count_a_tenth(self):
+        g, client = self.gen()
+        orig = client.create
+
+        def create(**kw):
+            resp = orig(**kw)
+            resp.usage = SimpleNamespace(input_tokens=500, output_tokens=1000,
+                                         cache_creation_input_tokens=0, cache_read_input_tokens=3000)
+            return resp
+        client.create = create
+        g.generate(self.d)
+        system = client.calls[0]["system"]
+        self.assertEqual(system[0]["cache_control"], {"type": "ephemeral"})
+        self.assertEqual(self.budget.used, 500 + 1000 + 300)
+        self.assertEqual(self.budget._data["calls"][-1]["cache_read"], 3000)
+
+    def test_finished_layouts_survive_a_restart(self):
+        g, client = self.gen()
+        g.generate(self.d)
+        again, client2 = self.gen()                               # a new generator, as after a restart
+        hit = again.generate(self.d)
+        self.assertEqual((hit["source"], len(client2.calls)), ("cache", 0))
+        self.assertTrue((Path(self.tmp.name) / "scene_cache.json").exists())
 
 
 class DescriptionAndExtrasTest(Base):
@@ -288,7 +336,7 @@ class EditTest(Base):
 
 
 class BudgetTest(Base):
-    def test_sonnet_with_high_effort_then_haiku_after_25k(self):
+    def test_sonnet_with_medium_effort_then_haiku_after_25k(self):
         g, client = self.gen()
         sources = [g.generate(self.d, regenerate=True)["source"] for _ in range(10)]
         self.assertEqual(sources[0], "sonnet")
@@ -296,7 +344,7 @@ class BudgetTest(Base):
         self.assertLessEqual(self.budget.used, 25000)          # hard cap, never crossed
         first = client.calls[0]
         self.assertEqual(first["model"], SONNET_MODEL)
-        self.assertEqual(first["output_config"]["effort"], "high")
+        self.assertEqual(first["output_config"]["effort"], "medium")
         self.assertEqual(first["thinking"], {"type": "between_tools"})
         last = client.calls[-1]
         self.assertEqual(last["model"], HAIKU_MODEL)

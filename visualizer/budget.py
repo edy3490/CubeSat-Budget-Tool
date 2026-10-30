@@ -3,6 +3,9 @@
 The count (input + output tokens of every Sonnet call) is saved to a file so it
 survives restarts. It's a hard cap: before each Sonnet call the worst case
 (input estimate + max output) is reserved, and Sonnet is only used if that fits.
+
+Cached input counts at what it's billed: a cache read is a tenth of a token,
+a cache write one and a quarter (Sonnet 5.5 prices, 5-minute cache).
 """
 from __future__ import annotations
 
@@ -15,6 +18,7 @@ from pathlib import Path
 SONNET_MODEL = os.environ.get("VISUALIZER_SONNET_MODEL", "claude-sonnet-5-5")
 HAIKU_MODEL = os.environ.get("VISUALIZER_HAIKU_MODEL", "claude-haiku-5-5")
 SONNET_TOKEN_LIMIT = int(os.environ.get("VISUALIZER_SONNET_TOKEN_LIMIT", "25000"))
+CACHE_READ_WEIGHT, CACHE_WRITE_WEIGHT = 0.1, 1.25
 USAGE_FILE = Path(os.environ.get("VISUALIZER_USAGE_FILE", Path(__file__).with_name("usage.json")))
 
 
@@ -66,14 +70,17 @@ class TokenBudget:
         with self._lock:
             self._reserved = max(0, self._reserved - reservation)
 
-    def record(self, model: str, input_tokens: int, output_tokens: int, reservation: int = 0, note: str = "") -> None:
+    def record(self, model: str, input_tokens: int, output_tokens: int, reservation: int = 0, note: str = "",
+               cache_write: int = 0, cache_read: int = 0) -> None:
         with self._lock:
             self._reserved = max(0, self._reserved - reservation)
             key = "sonnet_tokens_used" if model == SONNET_MODEL else "haiku_tokens_used"
-            self._data[key] += int(input_tokens) + int(output_tokens)
+            self._data[key] += round(int(input_tokens) + int(output_tokens)
+                                     + CACHE_WRITE_WEIGHT * int(cache_write) + CACHE_READ_WEIGHT * int(cache_read))
             self._data["calls"] = (self._data["calls"] + [{
                 "at": time.strftime("%Y-%m-%d %H:%M:%S"), "model": model,
-                "input_tokens": input_tokens, "output_tokens": output_tokens, "note": note,
+                "input_tokens": input_tokens, "cache_write": cache_write, "cache_read": cache_read,
+                "output_tokens": output_tokens, "note": note,
             }])[-50:]
             self._save()
 

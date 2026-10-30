@@ -11,7 +11,13 @@ a few extra parts with estimated mass and power.
 On an edit of a design it already laid out (same form factor), unchanged parts
 keep their place and the model is asked only about the new or changed ones.
 
-Sonnet (effort: high) is used while the 25k-token budget lasts, then Haiku.
+To keep tokens down: the instructions and output format are the same on every
+call, so they're prompt-cached (later calls read them at a tenth of the price);
+finished layouts are saved to scene_cache.json, so a design seen before costs
+nothing, even after a restart; and copies of a part (four solar panels) are
+described once.
+
+Sonnet (effort: medium) is used while the 25k-token budget lasts, then Haiku.
 If a call fails, the next model is tried; the rule-based layout (which uses
 the library too) is the last resort, so a scene always comes back.
 """
@@ -38,8 +44,12 @@ OUT_BASE, OUT_PER_PLACE, OUT_PER_DRAW, OUT_EXTRAS = 500, 80, 550, 900
 # Thinking is off by default: with it on, Sonnet spends thousands of tokens thinking per scene.
 # Set to "adaptive" to turn it on.
 SONNET_THINKING = os.environ.get("VISUALIZER_SONNET_THINKING", "off")
+# Medium matched high on layout quality in a side-by-side test, with ~9% less output.
+SONNET_EFFORT = os.environ.get("VISUALIZER_SONNET_EFFORT", "medium")
 THINKING_OFF = {SONNET_MODEL: {"type": "between_tools"}, HAIKU_MODEL: {"type": "disabled"}}
 MODEL_SOURCES = ("sonnet", "haiku", "cache", "reused")
+KEEP_SCENES = 40             # finished layouts kept on disk
+MAX_DRAWN_EXTRAS = 12        # earlier drawn extras offered for reuse in each prompt
 
 SYSTEM_PROMPT = f"""You are a spacecraft mechanical designer. You lay out a CubeSat in 3D from its parts list and explain how it works.
 
@@ -52,6 +62,7 @@ Most parts come from a part library and are already drawn. You only place them:
 - Library sizes are in the part's own frame [x, y, z]. With up +z or -z the size stays [x, y, z] in the body frame (x and y swap for spin 90 or 270). With up on a side (+x, -x, +y, -y) the part's own z (its thickness) lies along that side's normal, its own y runs along the rails (body z) and its own x runs across the face.
 - Each library part has a note saying which way it faces (lens on its own -z, cells on its own +z, ...). Follow it.
 - Set "shapes" to [] for library parts.
+- A row with "same_as" is another copy of that part, with the same size and note. Give it "role": "" (the first copy's role covers it).
 
 How to lay it out:
 - Stack the inside modules along z inside the envelope, about 1 mm apart (boards include their standoffs). On 6U/12U, use side-by-side stacks where the envelope is wide enough.
@@ -125,6 +136,9 @@ SCENE_SCHEMA = {
     "required": ["summary", "fit", "description", "parts", "extras", "drop_extras"], "additionalProperties": False,
 }
 
+# Part of every cache key: a change to the prompt or format means old layouts are redrawn.
+PROMPT_VERSION = hashlib.sha256((SYSTEM_PROMPT + json.dumps(SCENE_SCHEMA)).encode()).hexdigest()[:8]
+
 
 def _entry(info: dict) -> dict | None:
     return library.lookup(info["part"]["part"], info["part"]["unit_mass_kg"])
@@ -142,9 +156,13 @@ def build_prompt(design: dict, todo: list[dict], kept: list[dict], request: dict
     """The user message: the request, what to place (with library sizes and the designer's reasons),
     and on an edit what's already placed."""
     request = request or {}
-    rows = []
+    rows, first_copy = [], {}
     for i in todo:
         p, e = i["part"], _entry(i)
+        if i["part_index"] in first_copy:   # later copies only point at the first one
+            rows.append({"ref": i["ref"], "copy": f"{i['instance']} of {i['of']}", "same_as": first_copy[i["part_index"]]})
+            continue
+        first_copy[i["part_index"]] = i["ref"]
         row = {"ref": i["ref"], "part": p["part"], "vendor": p["vendor"], "slot": p["slot"], "mass_kg": p["unit_mass_kg"]}
         if i["of"] > 1:
             row["copy"] = f"{i['instance']} of {i['of']}"
@@ -163,8 +181,8 @@ def build_prompt(design: dict, todo: list[dict], kept: list[dict], request: dict
         lines.append(f"Other requests: {json.dumps(request['notes'])}")
     lines += [f"Form factor: {design['form_factor']}", f"Envelope [x, y, z] mm: {sc.envelope(design)}",
               f"Satellite: {design['name']}"]
-    drawn = [{"name": e["name"], "size": e["size"], "purpose": e.get("purpose", "")[:100]}
-             for e in library.generated_extras()[:30]]
+    drawn = [{"name": e["name"], "size": e["size"], "purpose": e.get("purpose", "")[:80]}
+             for e in library.generated_extras()[:MAX_DRAWN_EXTRAS]]
     if drawn:
         lines.append("Extras already drawn for earlier requests (reuse by exact name with shapes []): "
                      + json.dumps(drawn, separators=(",", ":")))
@@ -187,7 +205,8 @@ def build_prompt(design: dict, todo: list[dict], kept: list[dict], request: dict
 def _estimate_input_tokens(system: str, prompt: str) -> int:
     # Deliberately high (JSON runs about 3-3.5 characters per token) so the hard cap holds:
     # the budget reserves this before the call and the real count is usually lower.
-    return int((len(system) + len(prompt) + len(json.dumps(SCENE_SCHEMA))) / 2.5) + 500
+    # The output format costs more than its JSON length suggests (~1,850 tokens measured with count_tokens).
+    return int((len(system) + len(prompt) + len(json.dumps(SCENE_SCHEMA))) / 2.5) + 1200
 
 
 def _number(v, lo, hi):
@@ -204,8 +223,9 @@ class SceneGenerator:
         # Smallest Sonnet call worth making: a full placement of a typical design (for the status line).
         self.budget.min_call = _estimate_input_tokens(SYSTEM_PROMPT, "x" * 4500) + OUT_BASE + 16 * OUT_PER_PLACE + OUT_EXTRAS
         self._client = client
-        self._cache: dict[str, dict] = {}
         self._lock = threading.Lock()
+        self._cache_path = self.budget.path.with_name("scene_cache.json")
+        self._cache: dict[str, dict] = self._load_cache()
 
     def client(self):
         if self._client is None:
@@ -217,7 +237,7 @@ class SceneGenerator:
     def cache_key(design: dict, request: dict | None = None) -> str:
         # The goal and extra requests change the description and extras, so they're part of the key.
         request = request or {}
-        sig = ([design["form_factor"]] + [(p["slot"], p["part"], p["quantity"]) for p in design["parts"]]
+        sig = ([PROMPT_VERSION, design["form_factor"]] + [(p["slot"], p["part"], p["quantity"]) for p in design["parts"]]
                + [request.get("goal", ""), request.get("notes", "")])
         return hashlib.sha256(json.dumps(sig).encode()).hexdigest()[:16]
 
@@ -265,7 +285,8 @@ class SceneGenerator:
                     attempts.append({"model": model, "ok": True, **usage})
                     scene, repairs, saved = self._assemble(raw, design, kept, request, model)
                     result = {"scene": scene, "source": "sonnet" if model == SONNET_MODEL else "haiku",
-                              "model": model, "usage": usage, "repairs": repairs}
+                              "model": model, "usage": usage, "repairs": repairs,
+                              "effort": SONNET_EFFORT if model == SONNET_MODEL else None}
                     info["saved"] = saved
                     break
                 except Exception as e:  # noqa: BLE001 - any failure moves on to the next option
@@ -275,11 +296,30 @@ class SceneGenerator:
                       "usage": None, "repairs": []}
         result.update(info, attempts=attempts)
         if result["source"] != "default":
-            with self._lock:
-                self._cache[key] = result
+            self._remember(key, result)
         return {**result, "budget": self.budget.status()}
 
     # ---- helpers
+
+    def _load_cache(self) -> dict:
+        try:
+            data = json.loads(self._cache_path.read_text())
+            return data if isinstance(data, dict) else {}
+        except (OSError, ValueError):
+            return {}
+
+    def _remember(self, key: str, result: dict) -> None:
+        with self._lock:
+            self._cache.pop(key, None)
+            self._cache[key] = result                       # newest last
+            while len(self._cache) > KEEP_SCENES:
+                self._cache.pop(next(iter(self._cache)))
+            try:
+                tmp = self._cache_path.with_suffix(".tmp")
+                tmp.write_text(json.dumps(self._cache))
+                tmp.replace(self._cache_path)
+            except OSError:
+                pass                                        # still cached in memory
 
     @staticmethod
     def _carry_over(design: dict, previous: Optional[dict]) -> dict:
@@ -343,6 +383,9 @@ class SceneGenerator:
                                   "explode": [0, 0, 0], "shapes": place(local, pos, up, spin),
                                   "place": {"pos": pos, "up": up, "spin": spin},
                                   "role": str(p.get("role") or "")[:400]}
+        roles = {p["part_index"]: p["role"] for p in parts.values() if p.get("role")}
+        for p in parts.values():                            # copies share the first copy's role
+            p["role"] = p.get("role") or roles.get(p["part_index"], "")
         fixed, repairs = sc.repair({"summary": raw.get("summary"), "fit": raw.get("fit"), "parts": list(parts.values())}, design)
 
         # Extras: drop any the model asked to remove, then add the new ones.
@@ -382,21 +425,26 @@ class SceneGenerator:
     def _call(self, model: str, max_tokens: int, system: str, prompt: str, reservation: int) -> tuple[dict, dict]:
         kwargs = {"output_config": {"format": {"type": "json_schema", "schema": SCENE_SCHEMA}}}
         if model == SONNET_MODEL:
-            kwargs["output_config"]["effort"] = "high"
+            kwargs["output_config"]["effort"] = SONNET_EFFORT
         if model == SONNET_MODEL and SONNET_THINKING == "adaptive":
             kwargs["thinking"] = {"type": "adaptive"}
         elif model in THINKING_OFF:
             kwargs["thinking"] = THINKING_OFF[model]
         try:
+            # The system prompt and output format never change, so cache them (read back at a tenth of the price).
             resp = self.client().messages.create(
-                model=model, max_tokens=max_tokens, system=system,
+                model=model, max_tokens=max_tokens,
+                system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
                 messages=[{"role": "user", "content": prompt}], **kwargs)
         except Exception:
             self.budget.release(reservation)
             raise
         u = resp.usage
-        usage = {"input_tokens": u.input_tokens, "output_tokens": u.output_tokens}
-        self.budget.record(model, u.input_tokens, u.output_tokens, reservation, note=resp.stop_reason or "")
+        usage = {"input_tokens": u.input_tokens, "output_tokens": u.output_tokens,
+                 "cache_write": getattr(u, "cache_creation_input_tokens", 0) or 0,
+                 "cache_read": getattr(u, "cache_read_input_tokens", 0) or 0}
+        self.budget.record(model, u.input_tokens, u.output_tokens, reservation, note=resp.stop_reason or "",
+                           cache_write=usage["cache_write"], cache_read=usage["cache_read"])
         if resp.stop_reason == "max_tokens":
             raise RuntimeError(f"ran out of output tokens ({max_tokens})")
         text = "".join(b.text for b in resp.content if getattr(b, "type", None) == "text")

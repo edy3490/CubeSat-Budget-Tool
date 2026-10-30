@@ -46,3 +46,5 @@ env/
 # Visualizer token count (local)
 visualizer/usage.json
 visualizer/usage.tmp
+visualizer/scene_cache.json
+visualizer/scene_cache.tmp

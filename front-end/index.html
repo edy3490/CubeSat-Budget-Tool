@@ -601,7 +601,7 @@ function showScene(sceneData, info){
   if (info.pending) badge.innerHTML = `Quick layout · <b>${esc(modelName(info.pendingModel) || "the model")}</b> is drawing it…`;
   else if (info.source === "default") badge.innerHTML = `<b>Quick layout</b> (rule-based)`;
   else if (info.source === "reused") badge.innerHTML = `<b>Previous layout</b> · nothing new to place, no tokens spent`;
-  else badge.innerHTML = `Placed by <b>${esc(modelName(info.model))}</b>${info.model?.includes("sonnet") ? " · high effort" : ""}` +
+  else badge.innerHTML = `Placed by <b>${esc(modelName(info.model))}</b>${info.effort ? ` · ${esc(info.effort)} effort` : ""}` +
     (info.source === "cache" ? " · reused, no tokens spent" : info.mode === "edit" ? ` · edit: placed ${info.placed}, kept ${info.reused}` : "");
   const fit = sceneData.fit || {};
   const verdict = { fits: "Fits", tight: "Tight fit", does_not_fit: "Doesn't fit" }[fit.verdict];
@@ -656,11 +656,11 @@ async function requestVisual(regenerate, model){
     const v = await post("/api/visual", { design_id: id, regenerate });
     // Keep the drawing with its project, even if the user has switched to another one meanwhile.
     if (proj && proj.design?.design_id === id && v.source !== "default") {
-      proj.scene = { data: v.scene, info: { source: v.source, model: v.model, mode: v.mode, placed: v.placed, reused: v.reused } };
+      proj.scene = { data: v.scene, info: { source: v.source, model: v.model, effort: v.effort, mode: v.mode, placed: v.placed, reused: v.reused } };
       saveProjects();
     }
     if (seq !== visualSeq || current?.design_id !== id) return;   // a newer design replaced this one
-    showScene(v.scene, { source: v.source, model: v.model, mode: v.mode, placed: v.placed, reused: v.reused });
+    showScene(v.scene, { source: v.source, model: v.model, effort: v.effort, mode: v.mode, placed: v.placed, reused: v.reused });
     renderBudget(v.budget);
     if (v.source === "default") {
       const why = (v.attempts || []).map(a => modelName(a.model) + ": " + a.error).join("; ");

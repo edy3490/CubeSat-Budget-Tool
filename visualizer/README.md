@@ -51,29 +51,35 @@ The rule-based layout uses the library too, so the instant model has the same de
 
 | | |
 |---|---|
-| **Sonnet 5.5, effort high** | used until the Sonnet budget of **25,000 tokens** (input + output) is spent |
+| **Sonnet 5.5, effort medium** | used until the Sonnet budget of **25,000 tokens** (input + output, cached input at its price) is spent |
 | **Haiku 5.5** | used after that, and as a backup if a Sonnet call fails |
 | **Rule-based layout** | shown instantly while the model works, and used when there's no API key or every call fails |
 
-Measured costs with Sonnet:
+Measured costs with Sonnet, as counted against the budget:
 
 | | Tokens | Time |
 |---|---|---|
-| New design, with description | about 6.5k (5.1k in, 1.5k out) | ~10 s |
-| New design with drawn extras (laser) | about 6.3k (4.6k in, 1.7k out) | ~12 s |
-| Edit | about 5.4k (4.6k in, 0.7k out) | ~7 s |
-| Same parts list and request again | 0 (reused) | instant |
+| New design, within 5 minutes of the last call | about 3.6k (1.9k in, 3.3k cached = 0.3k, 1.4k out) | ~10 s |
+| New design after a 5-minute gap (cache rewritten) | about 7.5k (1.9k in, 3.3k written = 4.2k, 1.4k out) | ~10 s |
+| Edit | less: only new or changed parts are placed | ~7 s |
+| Same parts list and request again | 0 (reused, even after a restart) | instant |
 
-So 25k covers about 4 designs. Before the library, a scene without the description cost about 8k and took 20-30 s. Most of the cost is now the fixed instructions sent with every call (input), so prompt caching would be the next big saving.
+So 25k covers about 6 designs made in a row. How the count is kept down:
+
+- **Prompt caching.** The instructions and output format (~3.3k tokens) are the same on every call, so they're cached. A call within 5 minutes of the last reads them at a tenth of the price, and the budget counts them that way (a cache write counts 1.25x).
+- **Finished layouts are saved** to `visualizer/scene_cache.json` (not in git, last 40 kept), so a design seen before costs nothing, even after a restart. A change to the instructions starts fresh.
+- **Copies are described once.** Later copies of a part (the second solar panel) are sent as `same_as` the first, and share its role sentence.
+- **Medium effort.** In a side-by-side test on three designs, medium matched high on layout quality with ~9% less output.
 
 - The 25k cap is hard. Before each Sonnet call the worst case is reserved (a deliberately high input estimate plus the maximum output), so a call can't go over the limit. If the worst case doesn't fit, it uses Haiku.
 - The count is saved in `visualizer/usage.json` (not in git), so it survives restarts.
   - `python -m visualizer --budget` shows it.
   - `python -m visualizer --reset-budget` starts it over.
-- Scenes are reused by parts list for the life of the server. **Redraw** asks for a fresh one.
+- Scenes are reused by parts list and request, across restarts. **Redraw** asks for a fresh one.
 - **Thinking is off** by default; with it on, Sonnet spends thousands of tokens thinking per call. To turn it on, set `VISUALIZER_SONNET_THINKING=adaptive`.
 - Other settings (environment variables):
   - `VISUALIZER_SONNET_MODEL`, `VISUALIZER_HAIKU_MODEL`
+  - `VISUALIZER_SONNET_EFFORT` (default `medium`)
   - `VISUALIZER_SONNET_TOKEN_LIMIT`
   - `VISUALIZER_USAGE_FILE`
 
