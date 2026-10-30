@@ -170,6 +170,7 @@ def _inside_part(scene_part: dict, design: dict) -> bool:
 
 
 INSIDE_KINDS = ("board", "battery", "adcs", "imager", "payload_box")
+OVERLAP_MM = 1        # inside parts closer than this (in all three directions) count as overlapping
 
 
 def inside_stack_mm(design: dict) -> float:
@@ -188,33 +189,51 @@ def inside_z(env: list[float]) -> tuple[float, float]:
     return -env[2] / 2 + 6, env[2] / 2 - 6
 
 
-def pull_inside(scene: dict, design: dict) -> list[str]:
-    """Move inside parts the model left sticking out of the frame back in. Changes scene in place.
+def fix_inside(scene: dict, design: dict) -> list[str]:
+    """Fix inside parts the model left sticking out of the frame or overlapping each other.
+    Changes scene in place.
 
-    First each offending part is moved to the nearest free spot (its own column or another one).
-    If one can't be placed, the whole inside stack is re-stacked in columns like the default
-    layout, keeping the model's bottom-to-top order. Returns notes about what was changed.
+    Tried in order, keeping the first that works:
+    1. Nudge: slide parts along the rails just enough to open the gaps, keeping their order
+       (fixes small overlaps in a stack, and a stack that runs a little past an end).
+    2. Move: the offenders (parts sticking out, plus the smaller part of each overlapping pair)
+       each go to the nearest free spot, in their own column or another one.
+    3. Re-stack every inside part in columns like the default layout, keeping the model's
+       bottom-to-top order.
+    Returns notes about what was changed.
     """
     env = scene["envelope_mm"]
     X, Y, Z = env
     floor, ceiling = inside_z(env)
 
+    def kind(p):
+        return "extra" if p.get("extra") else kind_of(design["parts"][p["part_index"]])
+
     def inside(p):
         if p.get("extra"):     # an added part counts when the model put it inside the frame
             lo, hi = bbox(p["shapes"])
             return all(abs(lo[k] + hi[k]) / 2 < env[k] / 2 - 5 for k in range(3))
-        return p.get("part_index", -1) >= 0 and _inside_part(p, design)
+        # Thrusters share the stack (they must not overlap it) but their nozzle may stick out.
+        return p.get("part_index", -1) >= 0 and kind(p) in INSIDE_KINDS + ("thruster",)
 
     stack = [p for p in scene["parts"] if p["shapes"] and inside(p)]
-    out = [p for p in stack if _sticks_out(p, env)]
-    if not out:
-        return []
-    names = ", ".join(p["label"] for p in out)
     box = {id(p): bbox(p["shapes"]) for p in stack}
 
     def size(p):
         lo, hi = box[id(p)]
         return [hi[k] - lo[k] for k in range(3)]
+
+    out = [p for p in stack if kind(p) != "thruster" and _sticks_out(p, env)]
+    clashing = []          # the smaller part of every overlapping pair (that isn't already moving)
+    pairs = [(a, b) for i, a in enumerate(stack) for b in stack[i + 1:] if _overlap(box[id(a)], box[id(b)], OVERLAP_MM)]
+    for a, b in pairs:
+        if not any(p in out or p in clashing for p in (a, b)):
+            clashing.append(min((a, b), key=lambda p: math.prod(size(p))))
+    offenders = out + clashing
+    if not offenders:
+        return []
+    why = "; ".join(t for t in (out and "stuck out of the frame: " + ", ".join(p["label"] for p in out),
+                                clashing and "overlapped another part: " + ", ".join(p["label"] for p in clashing)) if t)
 
     def target(p, cx, cy, z0):
         sz = size(p)
@@ -224,47 +243,74 @@ def pull_inside(scene: dict, design: dict) -> list[str]:
         sz = size(p)
         return abs(cx) + sz[0] / 2 <= X / 2 + 1 and abs(cy) + sz[1] / 2 <= Y / 2 + 1
 
-    # 1. Move just the offending parts, each to the free spot nearest where the model put it.
+    def imager(p):
+        return kind(p) == "imager"
+
+    # How low and high each part may go. A part that stuck out must come inside the floor and
+    # ceiling; others may stay where the model put them; a camera's lens may poke out the bottom.
+    def low(p):
+        return -Z / 2 - BAFFLE_MM if imager(p) else floor if p in out else min(floor, box[id(p)][0][2])
+
+    def top(p):
+        return ceiling if p in out else max(ceiling, box[id(p)][1][2])
+
+    def valid(new):
+        for p in stack:
+            lo, hi = new[id(p)]
+            if lo[2] < low(p) - 0.01 or hi[2] > top(p) + 0.01:
+                return False
+            if p in out and any(max(-lo[k], hi[k]) > env[k] / 2 + 1 for k in (0, 1)):
+                return False   # sticks out sideways: a nudge along z can't fix that
+        bs = list(new.values())
+        return not any(_overlap(a, b, OVERLAP_MM) for i, a in enumerate(bs) for b in bs[i + 1:])
+
+    # 1. Nudge along the rails, keeping the order.
+    nudged = _nudge(stack, box, top)
+    if valid(nudged):
+        for p in stack:
+            if abs(nudged[id(p)][0][2] - box[id(p)][0][2]) > 0.01:
+                _move_to(p, box[id(p)], nudged[id(p)])
+        return [f"Nudged along the rails ({why})"]
+
+    # 2. Move just the offenders, each to the free spot nearest where the model put it.
     cols = [(c[0], c[1]) for c in _columns(env)]
-    taken = [box[id(p)] for p in stack if p not in out]
+    taken = [box[id(p)] for p in stack if p not in offenders]
     moves = {}
-    for p in sorted(out, key=lambda p: box[id(p)][0][2]):
+    for p in sorted(offenders, key=lambda p: box[id(p)][0][2]):
         lo, hi = box[id(p)]
+        h = hi[2] - lo[2]
         here = [(lo[k] + hi[k]) / 2 for k in range(3)]
+        bottom_z, top_z = low(p), top(p)
         best = None
         for cx, cy in [(here[0], here[1])] + cols:
             if not in_xy(p, cx, cy):
                 continue
-            for z0 in sorted({floor} | {b[1][2] + GAP_MM for b in taken}):
+            for z0 in {bottom_z, lo[2]} | {b[1][2] + GAP_MM for b in taken} | {b[0][2] - GAP_MM - h for b in taken}:
                 cand = target(p, cx, cy, z0)
-                if cand[1][2] > ceiling:
-                    break
-                if not any(_overlap(cand, b) for b in taken):
-                    dist = math.dist(here, [(cand[0][k] + cand[1][k]) / 2 for k in range(3)])
-                    if best is None or dist < best[0]:
-                        best = (dist, cand)
-                    break
+                if z0 < bottom_z - 0.01 or cand[1][2] > top_z + 0.01 or any(_overlap(cand, b, OVERLAP_MM) for b in taken):
+                    continue
+                dist = math.dist(here, [(cand[0][k] + cand[1][k]) / 2 for k in range(3)])
+                if best is None or dist < best[0]:
+                    best = (dist, cand)
         if best is None:
             moves = None
             break
         moves[id(p)] = best[1]
         taken.append(best[1])
     if moves is not None:
-        for p in out:
+        for p in offenders:
             _move_to(p, box[id(p)], moves[id(p)])
-        return [f"Moved back inside the frame: {names}"]
+        return [f"Moved to free space inside the frame ({why})"]
 
-    # 2. Re-stack everything inside in columns (the camera first, lens out the bottom).
+    # 3. Re-stack everything inside in columns (the camera first, lens out the bottom).
     cells = [(X / len({c[0] for c in cols}), Y / len({c[1] for c in cols}))]
-    order = sorted(stack, key=lambda p: (0 if not p.get("extra") and kind_of(design["parts"][p["part_index"]]) in ("imager", "payload_box") else 1,
-                                         box[id(p)][0][2]))
+    order = sorted(stack, key=lambda p: (0 if kind(p) in ("imager", "payload_box") else 1, box[id(p)][0][2]))
     bottom, new = [floor] * len(cols), {}
     for p in order:
         sz = size(p)
-        imager = not p.get("extra") and kind_of(design["parts"][p["part_index"]]) == "imager"
         if sz[0] <= cells[0][0] + 2 and sz[1] <= cells[0][1] + 2:     # fits one column
             c = min(range(len(cols)), key=lambda j: bottom[j])
-            if imager and bottom[c] == floor:
+            if imager(p) and bottom[c] == floor:
                 bottom[c] = -Z / 2 - BAFFLE_MM
             new[id(p)] = target(p, *cols[c], bottom[c])
             bottom[c] += sz[2] + GAP_MM
@@ -275,10 +321,37 @@ def pull_inside(scene: dict, design: dict) -> list[str]:
     if max(b[1][2] for b in new.values()) > ceiling + 1:
         scene["fit"] = {"verdict": "does_not_fit",
                         "note": f"The inside parts need about {inside_stack_mm(design):.0f} mm of stacking, more than the frame holds."}
-        return [f"Still partly outside the frame (not enough room inside): {names}"]
+        return [f"Not enough room inside to fix this ({why})"]
     for p in stack:
         _move_to(p, box[id(p)], new[id(p)])
-    return [f"Re-stacked the inside parts in columns: {names} stuck out of the frame"]
+    return [f"Re-stacked the inside parts in columns ({why})"]
+
+
+def _nudge(stack, box, top):
+    """Separate parts that share footprint area along z with as little movement as possible,
+    keeping their order: push each up off the ones below it, then push down from the top
+    whatever ended above its allowed top (top(p)). Returns {id(part): (lo, hi)}; the caller checks it."""
+    new = {id(p): ([*box[id(p)][0]], [*box[id(p)][1]]) for p in stack}
+    order = sorted(stack, key=lambda p: (new[id(p)][0][2], new[id(p)][1][2]))
+
+    def stacked(a, b):        # footprints overlap, so they must not share z
+        return all(min(new[id(a)][1][k], new[id(b)][1][k]) - max(new[id(a)][0][k], new[id(b)][0][k]) > OVERLAP_MM for k in range(2))
+
+    def shift(p, dz):
+        new[id(p)][0][2] += dz
+        new[id(p)][1][2] += dz
+
+    for i, p in enumerate(order):                                   # up
+        below = [new[id(q)][1][2] for q in order[:i] if stacked(p, q) and new[id(q)][1][2] - new[id(p)][0][2] > OVERLAP_MM]
+        if below:
+            shift(p, max(below) + GAP_MM - new[id(p)][0][2])
+    for i in range(len(order) - 1, -1, -1):                         # down
+        p = order[i]
+        caps = [top(p)] + [new[id(q)][0][2] - GAP_MM for q in order[i + 1:]
+                           if stacked(p, q) and new[id(p)][1][2] - new[id(q)][0][2] > OVERLAP_MM]
+        if new[id(p)][1][2] > min(caps):
+            shift(p, min(caps) - new[id(p)][1][2])
+    return new
 
 
 def _overlap(a, b, tol: float = 0.5) -> bool:

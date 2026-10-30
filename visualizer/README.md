@@ -102,7 +102,7 @@ So 25k covers about 6 designs made in a row. How the count is kept down:
   - library parts are expanded, and model-drawn parts are placed and saved to `parts/generated/`;
   - exploded-view offsets are worked out from where each part sits (`placement.auto_explode`);
   - `scene.repair` drops unknown refs, fills missing parts from the rule-based layout and clamps numbers.
-  - `scene.pull_inside` moves inside parts that stick out of the frame back in: to the nearest free spot, or, if there's none, by re-stacking the inside parts in columns like the rule-based layout. The prompt also gives the model the column centers and how tall the stack is, so on a 6U it splits the boards across two columns itself.
+  - `scene.fix_inside` fixes inside parts (boards, camera, thrusters, extras placed inside) that stick out of the frame or overlap each other. It tries, in order: nudging them along the rails just enough to open the gaps (keeps the order; a few mm for a typical overlap); moving each offender (the smaller of an overlapping pair) to the nearest free spot; re-stacking the inside parts in columns like the rule-based layout. If none fits, the design is marked doesn't fit. The prompt also gives the model the column centers and how tall the stack is, so on a 6U it splits the boards across two columns itself.
 
 The model output is only ever drawn as boxes and cylinders, never run as code. Surface detail (solar cells, board traces, brushed aluminium, foil) comes from textures the page draws itself.
 

@@ -189,17 +189,18 @@ class InsideTheFrameTest(Base):
     def test_a_good_layout_is_left_alone(self):
         s = default_scene(self.six)
         before = json.dumps(s)
-        self.assertEqual(sc.pull_inside(s, self.six), [])
+        self.assertEqual(sc.fix_inside(s, self.six), [])
         self.assertEqual(json.dumps(s), before)
 
-    def test_one_board_too_high_moves_to_free_space(self):
+    def test_one_board_too_high_comes_back_in_alone(self):
         s = default_scene(self.six)
         board = next(p for p in self.inside(s, self.six) if p["label"] == "OEM719")
         lo, hi = bbox(board["shapes"])
         sc._move_to(board, (lo, hi), ([lo[0], lo[1], lo[2] + 400], [hi[0], hi[1], hi[2] + 400]))
         others = {p["ref"]: json.dumps(p["shapes"]) for p in s["parts"] if p is not board}
-        notes = sc.pull_inside(s, self.six)
-        self.assertEqual(notes, ["Moved back inside the frame: OEM719"])
+        notes = sc.fix_inside(s, self.six)
+        self.assertEqual(len(notes), 1)
+        self.assertIn("stuck out of the frame: OEM719", notes[0])
         self.assert_all_inside_and_apart(s, self.six)
         self.assertEqual({p["ref"]: json.dumps(p["shapes"]) for p in s["parts"] if p is not board}, others)
 
@@ -213,12 +214,53 @@ class InsideTheFrameTest(Base):
             sc._move_to(p, (lo, hi), ([-w[0], -w[1], z], [w[0], w[1], z + hi[2] - lo[2]]))
             z += hi[2] - lo[2] + 1
         shared = self.inside(s, self.six)[0]["shapes"]                  # as if carried over from an earlier scene
-        notes = sc.pull_inside(s, self.six)
+        notes = sc.fix_inside(s, self.six)
         self.assertTrue(notes[0].startswith("Re-stacked the inside parts in columns"))
         self.assert_all_inside_and_apart(s, self.six)
         self.assertIsNot(self.inside(s, self.six)[0]["shapes"], shared)  # new shapes, the old ones untouched
         cam = next(p for p in self.inside(s, self.six) if sc.kind_of(self.six["parts"][p["part_index"]]) == "imager")
         self.assertLess(bbox(cam["shapes"])[0][2], -envelope(self.six)[2] / 2)   # lens still out the bottom
+
+    def column_pair(self, s):
+        """Two inside parts stacked in the same column, lower one first."""
+        parts = sorted(self.inside(s, self.six), key=lambda p: bbox(p["shapes"])[0][2])
+        for i, a in enumerate(parts):
+            for b in parts[i + 1:]:
+                A, B = bbox(a["shapes"]), bbox(b["shapes"])
+                if all(min(A[1][k], B[1][k]) - max(A[0][k], B[0][k]) > 1 for k in range(2)) and sc.kind_of(self.six["parts"][a["part_index"]]) != "imager":
+                    return a, b
+
+    def test_a_small_overlap_is_nudged_apart_keeping_the_order(self):
+        s = default_scene(self.six)
+        lower, upper = self.column_pair(s)
+        lo, hi = bbox(upper["shapes"])
+        sink = (lo[2] - bbox(lower["shapes"])[1][2]) + 3          # 3 mm into the part below
+        sc._move_to(upper, (lo, hi), ([lo[0], lo[1], lo[2] - sink], [hi[0], hi[1], hi[2] - sink]))
+        before = {p["ref"]: bbox(p["shapes"]) for p in s["parts"]}
+        notes = sc.fix_inside(s, self.six)
+        self.assertTrue(notes[0].startswith("Nudged along the rails"))
+        self.assertIn("overlapped another part", notes[0])
+        self.assert_all_inside_and_apart(s, self.six)
+        for p in s["parts"]:                                       # small moves, along z only
+            b, a = before[p["ref"]], bbox(p["shapes"])
+            self.assertEqual((b[0][0], b[0][1]), (a[0][0], a[0][1]))
+            self.assertLess(abs(a[0][2] - b[0][2]), 10)
+        self.assertLess(bbox(lower["shapes"])[0][2], bbox(upper["shapes"])[0][2])   # order kept
+
+    def test_thrusters_are_kept_clear_of_the_stack(self):
+        d = design("3U CubeSat with a propulsion system at 500 km")
+        s = default_scene(d)
+        thr = [p for p in s["parts"] if p["part_index"] >= 0 and sc.kind_of(d["parts"][p["part_index"]]) == "thruster"]
+        self.assertTrue(thr)
+        board = next(p for p in s["parts"] if p["part_index"] >= 0 and sc.kind_of(d["parts"][p["part_index"]]) == "board")
+        t = bbox(thr[0]["shapes"])
+        lo, hi = bbox(board["shapes"])
+        mid = (t[0][2] + t[1][2]) / 2                              # drop a board into the middle of the thruster
+        sc._move_to(board, (lo, hi), ([lo[0], lo[1], mid], [hi[0], hi[1], mid + hi[2] - lo[2]]))
+        self.assertTrue(sc.fix_inside(s, d))
+        parts = [p for p in s["parts"] if p["part_index"] >= 0 and sc.kind_of(d["parts"][p["part_index"]]) in sc.INSIDE_KINDS + ("thruster",)]
+        boxes = [bbox(p["shapes"]) for p in parts]
+        self.assertFalse(any(sc._overlap(a, b, 1) for i, a in enumerate(boxes) for b in boxes[i + 1:]))
 
     def test_prompt_gives_the_columns_and_the_stack_height(self):
         line = next(l for l in build_prompt(self.six, instances(self.six), []).split("\n") if l.startswith("Inside:"))
@@ -239,7 +281,7 @@ class InsideTheFrameTest(Base):
             return resp
         client.create = create
         out = g.generate(self.six)
-        self.assertTrue(any("inside the frame" in n or "Re-stacked" in n for n in out["repairs"]))
+        self.assertTrue(any("stuck out of the frame" in n for n in out["repairs"]))
         self.assert_all_inside_and_apart(out["scene"], self.six)
 
 

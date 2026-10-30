@@ -136,8 +136,10 @@ SCENE_SCHEMA = {
     "required": ["summary", "fit", "description", "parts", "extras", "drop_extras"], "additionalProperties": False,
 }
 
-# Part of every cache key: a change to the prompt or format means old layouts are redrawn.
-PROMPT_VERSION = hashlib.sha256((SYSTEM_PROMPT + json.dumps(SCENE_SCHEMA)).encode()).hexdigest()[:8]
+# Part of every cache key: a change to the prompt, the format or the fix-up rules means old layouts
+# are redrawn. Bump CHECKS when scene.fix_inside (or another fix-up) changes.
+CHECKS = "inside-2"
+PROMPT_VERSION = hashlib.sha256((SYSTEM_PROMPT + json.dumps(SCENE_SCHEMA) + CHECKS).encode()).hexdigest()[:8]
 
 
 def _entry(info: dict) -> dict | None:
@@ -423,7 +425,7 @@ class SceneGenerator:
                                "explode": [0, 0, 0], "shapes": place(local, pos, up, spin),
                                "place": {"pos": pos, "up": up, "spin": spin}, "role": meta["purpose"], "extra": meta}
         fixed["parts"] += list(extras.values())
-        repairs += sc.pull_inside(fixed, design)            # nothing inside may stick out of the frame
+        repairs += sc.fix_inside(fixed, design)             # nothing inside sticks out or overlaps
 
         d = raw.get("description") if isinstance(raw.get("description"), dict) else {}
         fixed["description"] = {"overview": str(d.get("overview") or "")[:1500], "layout": str(d.get("layout") or "")[:1500]}
