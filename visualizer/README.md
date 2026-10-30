@@ -14,12 +14,12 @@ design (parts list) ──> Claude lays it out in 3D ──> check & repair ─�
 | **Haiku 5.5** | used after that, and as a backup if a Sonnet call fails |
 | **Rule-based layout** | shown instantly while the model works, and used when there's no API key or every call fails |
 
-- The 25k cap is hard. Before each Sonnet call the worst case is reserved, so a call can't go over the limit. If there isn't room for a full scene (~6k tokens), it uses Haiku.
+- The 25k cap is hard. Before each Sonnet call the worst case is reserved, so a call can't go over the limit. If there isn't room for a full scene (~8k tokens), it uses Haiku.
 - The count is saved in `visualizer/usage.json` (not in git), so it survives restarts.
   - `python -m visualizer --budget` shows it.
   - `python -m visualizer --reset-budget` starts it over.
 - The same parts list is drawn only once per server run. Asking again reuses the saved scene and costs nothing. The **Redraw** button asks the model for a fresh one.
-- A Sonnet scene costs about 6k tokens (3k in, 3k out) and takes 15-20 s, so 25k covers 3-4 drawings.
+- A Sonnet scene has about 100 shapes, costs about 8k tokens (3.4k in, 4.6k out) and takes 20-30 s, so 25k covers 2-3 drawings. Shapes use short keys (`k`, `c`, `s`, `a`, `m`) and whole millimetres to keep the output small.
 - **Thinking is off** by default. With it on, Sonnet spent over 9k tokens thinking before writing anything, which would use most of the budget on one picture. To try it anyway, set `VISUALIZER_SONNET_THINKING=adaptive`.
 - Other settings (environment variables):
   - `VISUALIZER_SONNET_MODEL`, `VISUALIZER_HAIKU_MODEL`
@@ -29,7 +29,7 @@ design (parts list) ──> Claude lays it out in 3D ──> check & repair ─�
 ## What the model gets and returns
 
 - **Gets:** the form factor, the envelope in mm, and one line per physical item: ref, slot, part name, vendor, mass and power. Four solar panels are four refs.
-- **Returns:** a JSON scene, enforced by structured output (`SCENE_SCHEMA` in `generator.py`). Each part is a few boxes and cylinders, with a material and an `explode` offset. The model also returns:
+- **Returns:** a JSON scene, enforced by structured output (`SCENE_SCHEMA` in `generator.py`). Each part is a handful of boxes and cylinders (the prompt lists typical details per part type: rails and ribs, chips and connectors on boards, reaction wheels, lens rings, hinges), with a material and an `explode` offset. The model also returns:
   - a fit verdict (fits / tight / doesn't fit) with a reason, which is the closest thing to a volume check the project has;
   - a one-line summary.
 - **Repair pass** (`scene.repair`):
@@ -37,7 +37,7 @@ design (parts list) ──> Claude lays it out in 3D ──> check & repair ─�
   - clamps sizes and positions and caps the shape count;
   - notes any internal part placed outside the frame.
 
-The model output is only ever drawn as boxes and cylinders, never run as code.
+The model output is only ever drawn as boxes and cylinders, never run as code. Surface detail (solar cells, board traces, brushed aluminium, foil) comes from textures the page draws itself, so it costs no tokens.
 
 Coordinates are in mm, with the origin at the center of the structure. z runs along the rails: +z is the top (zenith) end and -z is the Earth-facing end.
 

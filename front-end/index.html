@@ -98,18 +98,6 @@ details ol{margin:6px 0 2px;padding-left:20px;font-size:13.5px;display:flex;flex
       </form>
     </section>
     <section class="pane dash" aria-label="Budget">
-      <div class="stats">
-        <div class="stat"><div class="k">Mass</div><div class="v" id="massV">-</div><div class="s" id="massS"></div><div class="meter" id="massM"><i></i></div></div>
-        <div class="stat"><div class="k">Power (orbit average)</div><div class="v" id="powV">-</div><div class="s" id="powS"></div><div class="meter" id="powM"><i></i></div></div>
-        <div class="stat"><div class="k">Mission cost</div><div class="v" id="costV">-</div><div class="s" id="costS"></div></div>
-        <div class="stat"><div class="k">Build time</div><div class="v" id="timeV">-</div><div class="s" id="timeS"></div></div>
-      </div>
-      <div><p class="label">Subsystems</p><div class="tablewrap"><table>
-        <thead><tr><th>Subsystem</th><th>kg</th><th>W</th><th>$k</th></tr></thead>
-        <tbody id="rows"></tbody>
-        <tfoot><tr><td>Total</td><td id="tMass"></td><td id="tPow"></td><td id="tCost"></td></tr></tfoot>
-      </table></div><p class="caption" id="costNote"></p></div>
-      <div><p class="label">Flags</p><ul class="notes" id="notes"></ul></div>
       <div><p class="label">3D model</p>
         <div class="viewer" id="viewer">
           <canvas id="canvas" role="img" aria-label="3D model of the CubeSat. Drag to rotate, scroll to zoom."></canvas>
@@ -130,6 +118,18 @@ details ol{margin:6px 0 2px;padding-left:20px;font-size:13.5px;display:flex;flex
         </div>
         <p class="caption" id="vNote"></p>
       </div>
+      <div class="stats">
+        <div class="stat"><div class="k">Mass</div><div class="v" id="massV">-</div><div class="s" id="massS"></div><div class="meter" id="massM"><i></i></div></div>
+        <div class="stat"><div class="k">Power (orbit average)</div><div class="v" id="powV">-</div><div class="s" id="powS"></div><div class="meter" id="powM"><i></i></div></div>
+        <div class="stat"><div class="k">Mission cost</div><div class="v" id="costV">-</div><div class="s" id="costS"></div></div>
+        <div class="stat"><div class="k">Build time</div><div class="v" id="timeV">-</div><div class="s" id="timeS"></div></div>
+      </div>
+      <div><p class="label">Subsystems</p><div class="tablewrap"><table>
+        <thead><tr><th>Subsystem</th><th>kg</th><th>W</th><th>$k</th></tr></thead>
+        <tbody id="rows"></tbody>
+        <tfoot><tr><td>Total</td><td id="tMass"></td><td id="tPow"></td><td id="tCost"></td></tr></tfoot>
+      </table></div><p class="caption" id="costNote"></p></div>
+      <div><p class="label">Flags</p><ul class="notes" id="notes"></ul></div>
       <div id="planSec" hidden><p class="label">Build plan</p>
         <p class="caption" id="planSub" style="margin:0 0 10px"></p>
         <div class="gantt" id="gantt"></div>
@@ -155,10 +155,11 @@ const modelName = id => !id ? "" : id.replace(/^claude-/, "").replace(/^(\w+)-(\
 
 /* ================================================================ 3D viewer */
 const viewer = await (async () => {
-  let THREE, OrbitControls;
+  let THREE, OrbitControls, RoomEnvironment = null;
   try {
     THREE = await import("three");
     ({ OrbitControls } = await import("three/addons/controls/OrbitControls.js"));
+    try { ({ RoomEnvironment } = await import("three/addons/environments/RoomEnvironment.js")); } catch (e) {}
   } catch (e) {
     $("vEmpty").textContent = "The 3D view needs an internet connection to load three.js. Everything else still works.";
     return null;
@@ -169,7 +170,13 @@ const viewer = await (async () => {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   const scene = new THREE.Scene();
+  if (RoomEnvironment) {   // soft studio reflections so metal, gold and glass read as materials
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  }
   const camera = new THREE.PerspectiveCamera(35, 1, 0.01, 200);
   const controls = new OrbitControls(camera, canvas);
   controls.enableDamping = true;
@@ -177,16 +184,88 @@ const viewer = await (async () => {
   controls.autoRotateSpeed = 0.8;
   controls.addEventListener("start", () => { controls.autoRotate = false; });
 
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x445066, 1.6));
-  const sun = new THREE.DirectionalLight(0xffffff, 2.2); sun.position.set(4, 6, 5); scene.add(sun);
-  const fill = new THREE.DirectionalLight(0x9fb4ff, 0.7); fill.position.set(-5, -2, -4); scene.add(fill);
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x445066, RoomEnvironment ? 0.7 : 1.6));
+  const sun = new THREE.DirectionalLight(0xffffff, 2.0); sun.position.set(4, 6, 5); scene.add(sun, sun.target);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.015;
+  const fill = new THREE.DirectionalLight(0x9fb4ff, 0.6); fill.position.set(-5, -2, -4); scene.add(fill);
+
+  // Point the shadow-casting light at the model and size its shadow box to fit.
+  function aimSun() {
+    const keep = t, b = new THREE.Box3();           // cover both the assembled and the exploded model
+    for (const v of [0, 1]) { t = v; apply(); root.updateMatrixWorld(true); b.expandByObject(root); }
+    t = keep; apply();
+    const c = b.getCenter(new THREE.Vector3()), r = b.getBoundingSphere(new THREE.Sphere()).radius * 1.1;
+    sun.target.position.copy(c);
+    sun.position.copy(c).add(new THREE.Vector3(0.55, 0.65, 0.5).multiplyScalar(r * 2));
+    Object.assign(sun.shadow.camera, { left: -r, right: r, top: r, bottom: -r, near: 0.01, far: r * 5 });
+    sun.shadow.camera.updateProjectionMatrix();
+  }
+
+  // Textures drawn on a canvas, so parts get surface detail without any downloads.
+  // Each is one repeating tile; `mm` is the tile's real size so detail stays to scale.
+  function canvasTexture(w, h, draw) {
+    const c = document.createElement("canvas"); c.width = w; c.height = h;
+    draw(c.getContext("2d"), w, h);
+    const t = new THREE.CanvasTexture(c);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+    return t;
+  }
+  const rnd = (seed => () => (seed = (seed * 16807) % 2147483647) / 2147483647)(7);
+  const TEX = {
+    solar: { mm: [40, 70], tex: canvasTexture(128, 224, (g, w, h) => {      // one triple-junction cell
+      g.fillStyle = "#cfd3da"; g.fillRect(0, 0, w, h);                       // substrate in the gaps
+      const grad = g.createLinearGradient(0, 0, w, h);
+      grad.addColorStop(0, "#22357e"); grad.addColorStop(1, "#141f52");
+      g.fillStyle = grad; g.beginPath();
+      g.moveTo(14, 4); g.lineTo(w - 4, 4); g.lineTo(w - 4, h - 14); g.lineTo(w - 14, h - 4); g.lineTo(4, h - 4); g.lineTo(4, 14); g.fill();
+      g.strokeStyle = "rgba(200,210,230,.35)"; g.lineWidth = 1;
+      for (let y = 12; y < h - 6; y += 7) { g.beginPath(); g.moveTo(6, y); g.lineTo(w - 6, y); g.stroke(); }
+      g.fillStyle = "#c9ced8"; g.fillRect(w * .3, 4, 3, h - 8); g.fillRect(w * .68, 4, 3, h - 8);   // busbars
+    }) },
+    pcb: { mm: [32, 32], tex: canvasTexture(256, 256, (g, w, h) => {        // traces, pads and vias
+      g.fillStyle = "#1d6e44"; g.fillRect(0, 0, w, h);
+      g.strokeStyle = "#2a8a58"; g.lineWidth = 3;
+      for (let i = 0; i < 26; i++) {
+        let x = rnd() * w, y = rnd() * h; g.beginPath(); g.moveTo(x, y);
+        for (let k = 0; k < 3; k++) { if (rnd() < .5) x += (rnd() - .5) * 120; else y += (rnd() - .5) * 120; g.lineTo(x, y); }
+        g.stroke();
+      }
+      g.fillStyle = "#c8a24a";
+      for (let i = 0; i < 40; i++) { const x = rnd() * w, y = rnd() * h; g.beginPath(); g.arc(x, y, 2.5, 0, 7); g.fill(); }
+      for (let i = 0; i < 4; i++) { const x = rnd() * (w - 60), y = rnd() * (h - 20); for (let k = 0; k < 8; k++) g.fillRect(x + k * 7, y, 4, 9); }
+    }) },
+    aluminum: { mm: [60, 60], tex: canvasTexture(256, 256, (g, w, h) => {   // brushed finish
+      g.fillStyle = "#c6ccd4"; g.fillRect(0, 0, w, h);
+      for (let y = 0; y < h; y++) { g.fillStyle = `rgba(${rnd() < .5 ? "255,255,255" : "70,80,95"},${(rnd() * .09).toFixed(3)})`; g.fillRect(0, y, w, 1); }
+    }) },
+    gold: { mm: [40, 40], tex: canvasTexture(256, 256, (g, w, h) => {       // crinkled foil
+      g.fillStyle = "#d1a23a"; g.fillRect(0, 0, w, h);
+      for (let i = 0; i < 160; i++) {
+        g.fillStyle = `rgba(${rnd() < .5 ? "255,236,170" : "120,80,10"},${(rnd() * .22).toFixed(3)})`;
+        g.beginPath(); g.moveTo(rnd() * w, rnd() * h); g.lineTo(rnd() * w, rnd() * h); g.lineTo(rnd() * w, rnd() * h); g.fill();
+      }
+    }) },
+  };
+  // Repeat a tile across a box's largest face at its real size.
+  function tiled(material, dims) {
+    const t = TEX[material]; if (!t) return null;
+    const [X, Y, Z] = dims, thin = Math.min(X, Y, Z);
+    const [u, v] = thin === X ? [Z, Y] : thin === Y ? [X, Z] : [X, Y];
+    const map = t.tex.clone();
+    map.repeat.set(Math.max(1, u / t.mm[0]), Math.max(1, v / t.mm[1]));
+    return map;
+  }
 
   const MATS = {
-    aluminum: { color: 0xc3c9d2, metalness: .65, roughness: .35 },
-    black:    { color: 0x2b2e35, metalness: .25, roughness: .6 },
-    pcb:      { color: 0x1f7a4a, metalness: .1,  roughness: .7 },
-    solar:    { color: 0x1c2f70, metalness: .45, roughness: .28 },
-    gold:     { color: 0xd4a63a, metalness: .85, roughness: .3 },
+    aluminum: { color: 0xffffff, metalness: .7,  roughness: .38 },   // colour comes from its texture
+    black:    { color: 0x2b2e35, metalness: .25, roughness: .55 },
+    pcb:      { color: 0xffffff, metalness: .1,  roughness: .65 },
+    solar:    { color: 0xffffff, metalness: .35, roughness: .25 },
+    gold:     { color: 0xffffff, metalness: .85, roughness: .32 },
     glass:    { color: 0x8fc1ff, metalness: .1,  roughness: .05, transparent: true, opacity: .6 },
     copper:   { color: 0xc47a45, metalness: .75, roughness: .35 },
     white:    { color: 0xe7e9ec, metalness: 0,   roughness: .8 },
@@ -215,7 +294,11 @@ const viewer = await (async () => {
       geo = new THREE.BoxGeometry(sx * S, sz * S, sy * S);
     }
     const mat = new THREE.MeshStandardMaterial(MATS[s.material] || MATS.aluminum);
+    if (s.kind !== "cylinder") { const map = tiled(s.material, [sx, sz, sy]); if (map) mat.map = map; }
+    else if (TEX[s.material]) mat.color.set({ aluminum: 0xc3c9d2, pcb: 0x1f7a4a, solar: 0x1c2f70, gold: 0xd4a63a }[s.material]);
     const mesh = new THREE.Mesh(geo, mat);
+    mesh.castShadow = s.material !== "glass";
+    mesh.receiveShadow = true;
     if (rot) mesh.rotation.set(...rot);
     mesh.position.copy(toV(...s.center));
     mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo, 30), edgeMat));
@@ -223,7 +306,7 @@ const viewer = await (async () => {
   }
 
   function load(sceneData) {
-    if (root) { scene.remove(root); root.traverse(o => { o.geometry?.dispose(); if (o.material && o.material !== edgeMat) o.material.dispose(); }); }
+    if (root) { scene.remove(root); root.traverse(o => { o.geometry?.dispose(); if (o.material && o.material !== edgeMat) { o.material.map?.dispose(); o.material.dispose(); } }); }
     root = new THREE.Group(); groups = []; hovered = -1;
     labelBox.innerHTML = '<svg aria-hidden="true"><path/><g></g></svg>';
     for (const p of sceneData.parts) {
@@ -240,6 +323,7 @@ const viewer = await (async () => {
     }
     scene.add(root);
     apply();
+    aimSun();
     fit(true);
     $("vEmpty").hidden = true;
   }

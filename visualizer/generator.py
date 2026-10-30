@@ -15,9 +15,9 @@ from typing import Optional
 from . import scene as sc
 from .budget import HAIKU_MODEL, SONNET_MODEL, TokenBudget
 
-SONNET_MAX_OUTPUT = 9000     # a scene is ~3-4k output tokens (+ ~3k input)
-SONNET_MIN_OUTPUT = 3500     # less room than this left in the budget: use Haiku instead
-HAIKU_MAX_OUTPUT = 9000
+SONNET_MAX_OUTPUT = 14000    # a detailed scene is ~5-7k output tokens (+ ~4k input)
+SONNET_MIN_OUTPUT = 6000     # less room than this left in the budget: use Haiku instead (a scene needs ~5k)
+HAIKU_MAX_OUTPUT = 14000
 TIMEOUT_SECONDS = 180
 
 # Thinking is off by default: with it on, Sonnet spends 9k+ tokens thinking per scene,
@@ -29,18 +29,26 @@ SYSTEM_PROMPT = f"""You are a spacecraft mechanical designer. You lay out a Cube
 
 Coordinates: millimetres, satellite body frame. Origin at the center of the structure. z runs along the long rails; +z is the top (zenith) end, -z is the bottom (Earth-facing) end. The structure envelope is given as [x, y, z] in mm.
 
-Every shape is an axis-aligned box given by its center and full size [x, y, z]. kind "cylinder" fills its box as a cylinder along `axis` (the diameter is the smaller of the other two sizes). Materials: {", ".join(sc.MATERIALS)}.
+Every shape is an axis-aligned box: "c" is its center and "s" its full size [x, y, z]. "k" is the kind; "cylinder" fills its box as a cylinder along axis "a" (the diameter is the smaller of the other two sizes). "m" is the material: {", ".join(sc.MATERIALS)}. Use whole millimetres; use one decimal only for parts thinner than 3 mm.
 
 How to lay it out:
 - Use what you know about each real part (vendor, product line, form factor) for its size. If you don't know a part, estimate from its mass and type.
-- The structure: corner rails (about 8.5 mm square) plus frames at each end, and mid frames where a real structure has them. Keep it open so the inside stays visible.
-- Boards (flight computer, EPS, radios, GNSS receiver) are PC/104-style cards about 90 x 96 mm, stacked along z with standoffs and gaps between them. On 6U/12U, use the wider footprint or side-by-side stacks.
-- Cameras sit at the -z end with the lens looking out through the -z face. Show the lens barrel and a glass lens.
-- Thrusters sit at an end with the nozzle pointing out.
+- Boards (flight computer, EPS, radios, GNSS receiver) are PC/104-style cards about 90 x 96 mm, stacked along z with gaps between them. On 6U/12U, use the wider footprint or side-by-side stacks.
+- Cameras sit at the -z end with the lens looking out through the -z face. Thrusters sit at an end with the nozzle pointing out.
 - Body-mounted solar panels lie flat on the long faces, just outside the rails. Deployable arrays are wings hinged at the +z end, shown deployed.
 - UHF antenna modules sit on an end face with the tape antennas deployed. Patch antennas go on the outside: GNSS facing +z, downlink facing Earth (-z) or on a side face if the -z face is full.
 - Inside parts must stay inside the envelope and must not overlap each other.
-- Add a little detail where it helps people recognise the part (connectors, reaction wheels, cells, lens), but at most {sc.MAX_SHAPES_PER_PART} shapes per part and {sc.MAX_SHAPES_TOTAL} shapes overall.
+
+Detail: model each part the way it looks in a vendor photo, so people can tell the parts apart. Typical pieces:
+- Structure: 4 corner rails with short rail feet at both ends, end frames, side ribs at each 1U boundary, and 4 thin stack rods (titanium) running through the board stack.
+- Boards: the PCB plus 2-5 components on top: chips (black), a shielded RF can (aluminum) on radios, connectors along one edge (gold or black), and spacers (aluminum) at the corners under the board.
+- ADCS: its board plus three reaction wheels (cylinders on the x, y and z axes), two or three magnetorquer rods (copper cylinders) and a sensor or star-tracker lens if it has one.
+- Battery: cells (white or blue cylinders) in a holder, plus its board.
+- Camera: body, lens barrel with 2-3 rings of different diameters, glass lens, and a black baffle or sunshade at the aperture.
+- Thruster: tank (titanium cylinder or box), valve block and nozzle.
+- Solar panels: substrate (pcb) with a "solar" layer on the outer side; the renderer draws the individual cells, so one solar box per panel face is enough. Deployables get hinges.
+- UHF antenna: base plate, burn-wire housing and the deployed tape elements. Patch antennas: substrate plus the copper patch (one strip per row for arrays).
+Aim for about 100-140 shapes in total (most of them on the larger parts), and never more than {sc.MAX_SHAPES_PER_PART} per part or {sc.MAX_SHAPES_TOTAL} overall.
 
 Exploded view: give each part an `explode` offset in mm, the distance it moves when the view is exploded. Be generous so a viewer can see every part on its own: spread the internal stack along z so neighbours end up at least 30 mm apart (the stack ends up roughly twice as long as the structure), move panels 100-150 mm outward away from the body, move end-mounted antennas past the end of the spread stack, and keep the structure fixed at [0, 0, 0]. Nothing should overlap another part when exploded.
 
@@ -70,13 +78,14 @@ SCENE_SCHEMA = {
                         "type": "array",
                         "items": {
                             "type": "object",
+                            # Short keys keep the output small: kind, center, size, axis, material.
                             "properties": {
-                                "kind": {"type": "string", "enum": list(sc.KINDS)},
-                                "center": VEC, "size": VEC,
-                                "axis": {"type": "string", "enum": list(sc.AXES)},
-                                "material": {"type": "string", "enum": list(sc.MATERIALS)},
+                                "k": {"type": "string", "enum": list(sc.KINDS)},
+                                "c": VEC, "s": VEC,
+                                "a": {"type": "string", "enum": list(sc.AXES)},
+                                "m": {"type": "string", "enum": list(sc.MATERIALS)},
                             },
-                            "required": ["kind", "center", "size", "axis", "material"],
+                            "required": ["k", "c", "s", "a", "m"],
                             "additionalProperties": False,
                         },
                     },

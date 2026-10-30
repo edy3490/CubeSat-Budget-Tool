@@ -19,8 +19,8 @@ KINDS = ("box", "cylinder")
 AXES = ("x", "y", "z")
 MATERIALS = ("aluminum", "black", "pcb", "solar", "gold", "glass", "copper", "white", "titanium", "kapton")
 
-MAX_SHAPES_PER_PART = 12
-MAX_SHAPES_TOTAL = 160
+MAX_SHAPES_PER_PART = 22
+MAX_SHAPES_TOTAL = 260
 SPREAD = 1.6         # default layout: the exploded stack is (1 + SPREAD) times as long
 REACH_MM = 900       # nothing may sit further than this outside the structure
 MIN_SIZE_MM = 0.5
@@ -108,12 +108,14 @@ def repair(raw: dict, design: dict) -> tuple[dict, list[str]]:
         for s in (p.get("shapes") or [])[:MAX_SHAPES_PER_PART]:
             if not isinstance(s, dict) or total >= MAX_SHAPES_TOTAL:
                 continue
+            # The model writes short keys (k, c, s, a, m); long names are accepted too.
+            kind, axis, mat = s.get("k", s.get("kind")), s.get("a", s.get("axis")), s.get("m", s.get("material"))
             shapes.append({
-                "kind": s.get("kind") if s.get("kind") in KINDS else "box",
-                "center": _vec(s.get("center"), [0, 0, 0], lo_c, hi_c),
-                "size": _vec(s.get("size"), [10, 10, 10], [MIN_SIZE_MM] * 3, max_s),
-                "axis": s.get("axis") if s.get("axis") in AXES else "z",
-                "material": s.get("material") if s.get("material") in MATERIALS else "aluminum",
+                "kind": kind if kind in KINDS else "box",
+                "center": _vec(s.get("c", s.get("center")), [0, 0, 0], lo_c, hi_c),
+                "size": _vec(s.get("s", s.get("size")), [10, 10, 10], [MIN_SIZE_MM] * 3, max_s),
+                "axis": axis if axis in AXES else "z",
+                "material": mat if mat in MATERIALS else "aluminum",
             })
             total += 1
         if not shapes:
@@ -167,6 +169,59 @@ def _sticks_out(scene_part: dict, env: list[float], slack: float = 15) -> bool:
 def _box(center, size, material, kind="box", axis="z") -> dict:
     return {"kind": kind, "center": [round(c, 1) for c in center], "size": [round(s, 1) for s in size],
             "axis": axis, "material": material}
+
+
+def _module(k: str, part: dict, cx, cy, cz, w, d, h, Z) -> list[dict]:
+    """Shapes for one stacked module (payload, ADCS, battery, thruster or board)."""
+    bot = cz - h / 2
+    if k == "imager":
+        barrel = min(w, d) * 0.62
+        return [_box((cx, cy, cz + h * .2), (w * .95, d * .95, h * .6), "black"),                 # camera body
+                _box((cx, cy, cz + h * .5 - 1), (w * .9, d * .9, 2), "pcb"),                          # electronics
+                _box((cx + w * .3, cy, cz + h * .5 + 3), (14, 24, 6), "gold"),                        # connector
+                _box((cx, cy, bot + h * .2), (barrel, barrel, h * .2), "black", "cylinder"),          # lens barrel
+                _box((cx, cy, bot + h * .31), (barrel * 1.08, barrel * 1.08, 4), "aluminum", "cylinder"),   # focus rings
+                _box((cx, cy, bot + h * .12), (barrel * 1.05, barrel * 1.05, 3), "aluminum", "cylinder"),
+                _box((cx, cy, -Z / 2 - 3), (barrel * .95, barrel * .95, 8), "black", "cylinder"),     # baffle
+                _box((cx, cy, -Z / 2 + 1.5), (barrel * .75, barrel * .75, 2), "glass", "cylinder")]
+    if k == "adcs":
+        wheel = min(w, d) * .3
+        return [_box((cx, cy, bot + 1), (w * .95, d * .95, 1.6), "pcb"),
+                _box((cx - w * .22, cy - d * .22, bot + 3 + wheel * .2), (wheel, wheel, wheel * .4), "aluminum", "cylinder", "z"),
+                _box((cx + w * .22, cy - d * .22, bot + 3 + wheel * .5), (wheel * .4, wheel, wheel), "aluminum", "cylinder", "x"),
+                _box((cx - w * .22, cy + d * .22, bot + 3 + wheel * .5), (wheel, wheel * .4, wheel), "aluminum", "cylinder", "y"),
+                _box((cx + w * .2, cy + d * .25, bot + 6), (w * .45, 7, 7), "copper", "cylinder", "x"),       # torque rods
+                _box((cx + w * .3, cy + d * .05, bot + 6), (7, d * .35, 7), "copper", "cylinder", "y"),
+                _box((cx, cy, cz + h * .45), (w * .95, d * .95, 1.6), "pcb"),
+                _box((cx - w * .25, cy + d * .25, cz + h * .45 + 2.5), (14, 14, 3), "black")]
+    if k == "battery":
+        out = [_box((cx, cy, bot + 1), (w * .95, d * .95, 1.6), "pcb"),
+               _box((cx + w * .35, cy, bot + 3.5), (8, 24, 3.5), "gold")]
+        for sx in (-1, 1):
+            for sy in (-1, 1):
+                out.append(_box((cx + sx * w * .2, cy + sy * d * .2, cz + 1), (18, 18, h - 6), "white", "cylinder"))
+        out += [_box((cx, cy + sy * d * .2, cz + h / 2 - 2), (w * .7, 4, 3), "black") for sy in (-1, 1)]   # holder straps
+        return out
+    if k == "thruster":
+        return [_box((cx, cy, bot + 2), (w * .95, d * .95, 2), "pcb"),
+                _box((cx, cy, cz - 3), (min(w, d) * .8, min(w, d) * .8, h - 16), "titanium", "cylinder"),     # tank
+                _box((cx + w * .3, cy + d * .3, cz + h / 2 - 8), (16, 16, 12), "aluminum"),              # valve block
+                _box((cx, cy, Z / 2 + 4), (14, 14, 10), "aluminum", "cylinder"),                       # nozzle
+                _box((cx, cy, Z / 2 + 10), (20, 20, 4), "black", "cylinder")]
+    if k == "payload_box":
+        return [_box((cx, cy, cz), (w * .9, d * .9, h), "gold"),
+                _box((cx, cy, bot + 1), (w * .95, d * .95, 1.6), "pcb")]
+    # Board: PCB, components, an edge connector, corner spacers; radios get a shielded can.
+    radio = "radio" in part["slot"]
+    out = [_box((cx, cy, bot + 1.5), (w * .95, d * .95, 1.6), "pcb"),
+           _box((cx - w * .1, cy + d * .05, bot + 4), (w * .5 if radio else 16, d * .4 if radio else 16, 5 if radio else 2.5),
+                "aluminum" if radio else "black"),
+           _box((cx + w * .25, cy - d * .25, bot + 3.2), (10, 10, 2), "black"),
+           _box((cx, cy + d * .44, bot + 4.5), (w * .55, 5, 6), "black"),                               # stack connector
+           _box((cx - w * .42, cy - d * .3, bot + 4), (6, 6, 5), "gold", "cylinder")]                   # SMA / test point
+    out += [_box((cx + sx * (w * .47 - 4), cy + sy * (d * .47 - 4), bot - 2), (5, 5, 4), "aluminum", "cylinder")
+            for sx in (-1, 1) for sy in (-1, 1)]                                                          # spacers
+    return out
 
 
 def _height_mm(part: dict, k: str) -> float:
@@ -223,39 +278,24 @@ def default_scene(design: dict) -> dict:
             cz = bottom[c] + h / 2
             bottom[c] += h + 3
         cx, cy, w, d = cols[c]
-        if k == "imager":
-            barrel = min(w, d) * 0.8
-            shapes = [_box((cx, cy, cz + h * 0.15), (w * .95, d * .95, h * .7), "black"),
-                      _box((cx, cy, cz - h * 0.35), (barrel, barrel, h * .3), "black", "cylinder"),
-                      _box((cx, cy, -Z / 2 - 1), (barrel * .7, barrel * .7, 3), "glass", "cylinder")]
-        elif k == "adcs":
-            shapes = [_box((cx, cy, cz - h * .3), (w * .95, d * .95, 2), "pcb"),
-                      _box((cx, cy, cz + h * .1), (w * .9, d * .9, h * .7), "aluminum")]
-        elif k == "battery":
-            shapes = [_box((cx, cy, cz - h * .4), (w * .95, d * .95, 2), "pcb")]
-            for sx in (-1, 1):
-                for sy in (-1, 1):
-                    shapes.append(_box((cx + sx * w * .22, cy + sy * d * .22, cz + 2), (18, 18, h - 6), "white", "cylinder"))
-        elif k == "thruster":
-            shapes = [_box((cx, cy, cz), (w * .9, d * .9, h - 8), "titanium"),
-                      _box((cx, cy, Z / 2 + 4), (14, 14, 10), "aluminum", "cylinder")]
-        elif k == "payload_box":
-            shapes = [_box((cx, cy, cz), (w * .9, d * .9, h), "gold")]
-        else:
-            shapes = [_box((cx, cy, cz - h / 2 + 1.5), (w * .95, d * .95, 1.6), "pcb"),
-                      _box((cx, cy, cz + 2), (w * .6, d * .5, h - 6), "black" if "radio" in info["part"]["slot"] else "aluminum")]
+        shapes = _module(k, info["part"], cx, cy, cz, w, d, h, Z)
         # Exploded: the stack spreads out along the rails.
         add(info, shapes, (0, 0, cz * SPREAD))
 
-    # Structure: corner rails and a frame at each end.
+    # Structure: corner rails with feet, end frames, ribs at each 1U, and stack rods.
     for info in (i for i in items if kind_of(i["part"]) == "structure"):
         r = 8.5
-        shapes = [_box((sx * (X / 2 - r / 2), sy * (Y / 2 - r / 2), 0), (r, r, Z), "aluminum")
+        shapes = [_box((sx * (X / 2 - r / 2), sy * (Y / 2 - r / 2), 0), (r, r, Z - 13), "aluminum")
                   for sx in (-1, 1) for sy in (-1, 1)]
-        for ez in (-1, 1):
-            zc = ez * (Z / 2 - 3)
-            shapes += [_box((0, sy * (Y / 2 - 3), zc), (X, 6, 6), "aluminum") for sy in (-1, 1)]
-            shapes += [_box((sx * (X / 2 - 3), 0, zc), (6, Y, 6), "aluminum") for sx in (-1, 1)]
+        shapes += [_box((sx * (X / 2 - r / 2), sy * (Y / 2 - r / 2), ez * (Z / 2 - 3.3)), (r - 1, r - 1, 6.5), "black")
+                   for sx in (-1, 1) for sy in (-1, 1) for ez in (-1, 1)]            # rail feet
+        ribs = [ez * (Z / 2 - 10) for ez in (-1, 1)] + [-Z / 2 + 113.5 * n for n in range(1, int(Z // 113.5))]
+        for zc in ribs:
+            shapes += [_box((0, sy * (Y / 2 - 3), zc), (X - 2 * r, 5, 5), "aluminum") for sy in (-1, 1)]
+            shapes += [_box((sx * (X / 2 - 3), 0, zc), (5, Y - 2 * r, 5), "aluminum") for sx in (-1, 1)]
+        for cx, cy, w, d in _columns(env):                                          # stack rods
+            shapes += [_box((cx + sx * (w / 2 - 4), cy + sy * (d / 2 - 4), 0), (3, 3, Z - 24), "titanium", "cylinder")
+                       for sx in (-1, 1) for sy in (-1, 1)]
         add(info, shapes, (0, 0, 0))
 
     # Solar panels: body panels on the long faces; deployables as wings off the top end.
@@ -266,19 +306,25 @@ def default_scene(design: dict) -> dict:
         fx, fy = faces[n % 4]
         layer = n // 4
         off = 1.5 + layer * 3
-        if fx:
-            shapes = [_box((fx * (X / 2 + off), 0, 0), (2, Y - 4, Z - 8), "solar")]
+        if fx:   # substrate, cells on the outside
+            shapes = [_box((fx * (X / 2 + off), 0, 0), (1.6, Y - 4, Z - 8), "pcb"),
+                      _box((fx * (X / 2 + off + 1.2), 0, 0), (0.8, Y - 10, Z - 16), "solar")]
         else:
-            shapes = [_box((0, fy * (Y / 2 + off), 0), (X - 4, 2, Z - 8), "solar")]
+            shapes = [_box((0, fy * (Y / 2 + off), 0), (X - 4, 1.6, Z - 8), "pcb"),
+                      _box((0, fy * (Y / 2 + off + 1.2), 0), (X - 10, 0.8, Z - 16), "solar")]
         add(info, shapes, (fx * 110, fy * 110, 0))
     for n, info in enumerate(wings):
         fx, fy = faces[n % 4]
         panels = 2 if "double" in info["part"]["part"].lower() else 1
         span = (Z - 10) * panels
         if fx:
-            shapes = [_box((fx * (X / 2 + 4 + span / 2), 0, Z / 2 - 4), (span, Y - 6, 2), "solar")]
+            shapes = [_box((fx * (X / 2 + 4 + span / 2), 0, Z / 2 - 4), (span, Y - 6, 1.6), "pcb"),
+                      _box((fx * (X / 2 + 4 + span / 2), 0, Z / 2 - 2.8), (span - 6, Y - 12, 0.8), "solar")]
+            shapes += [_box((fx * (X / 2 + 3), hy * (Y / 2 - 15), Z / 2 - 4), (6, 14, 6), "aluminum", "cylinder", "y") for hy in (-1, 1)]
         else:
-            shapes = [_box((0, fy * (Y / 2 + 4 + span / 2), Z / 2 - 4), (X - 6, span, 2), "solar")]
+            shapes = [_box((0, fy * (Y / 2 + 4 + span / 2), Z / 2 - 4), (X - 6, span, 1.6), "pcb"),
+                      _box((0, fy * (Y / 2 + 4 + span / 2), Z / 2 - 2.8), (X - 12, span - 6, 0.8), "solar")]
+            shapes += [_box((hx * (X / 2 - 15), fy * (Y / 2 + 3), Z / 2 - 4), (14, 6, 6), "aluminum", "cylinder", "x") for hx in (-1, 1)]
         add(info, shapes, (fx * 80, fy * 80, 60))
 
     # Antennas.
@@ -287,7 +333,10 @@ def default_scene(design: dict) -> dict:
         if k == "whip_antenna":
             zc = Z / 2 + 4
             whip = 170
-            shapes = [_box((0, 0, zc), (min(X, 98), min(Y, 98), 7), "black")]
+            shapes = [_box((0, 0, zc), (min(X, 98), min(Y, 98), 7), "black"),
+                      _box((0, 0, zc + 3.8), (min(X, 98) - 30, min(Y, 98) - 30, 0.6), "pcb")]
+            shapes += [_box((sx * 40, 0, zc + 4.5), (8, 16, 3), "white") for sx in (-1, 1)]       # burn-wire housings
+            shapes += [_box((0, sy * 40, zc + 4.5), (16, 8, 3), "white") for sy in (-1, 1)]
             shapes += [_box((sx * (49 + whip / 2), 0, zc), (whip, 3, 0.6), "aluminum") for sx in (-1, 1)]
             shapes += [_box((0, sy * (49 + whip / 2), zc), (3, whip, 0.6), "aluminum") for sy in (-1, 1)]
             add(info, shapes, (0, 0, Z / 2 * SPREAD + 70))
@@ -308,8 +357,8 @@ def default_scene(design: dict) -> dict:
     # Two whip antennas (command + relay): put the second one on the bottom end.
     whips = [p for p in parts if p.pop("_whip", False)]
     for p in whips[1:]:
-        for s in p["shapes"]:
-            s["center"][2] = -Z / 2 - 4
+        for s in p["shapes"]:     # mirror it onto the bottom end
+            s["center"][2] = -s["center"][2]
         p["explode"][2] = -(Z / 2 * SPREAD + 70)
 
     parts.sort(key=lambda p: [i["ref"] for i in items].index(p["ref"]))
