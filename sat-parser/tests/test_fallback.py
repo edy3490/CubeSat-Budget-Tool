@@ -12,6 +12,7 @@ CASES = [
     ("satellite that lasts 18 months", {"lifetime_years": 1.5}),
     ("cubesat for 2 years in low earth orbit", {"lifetime_years": 2.0, "orbit": "LEO"}),
     ("geostationary comms satellite", {"orbit": "GEO", "payload": "radio_relay"}),
+    ("1U beacon", {"size_u": 1, "payload": "radio_relay"}),          # same reading the Haiku parser is told to use
 ]
 
 

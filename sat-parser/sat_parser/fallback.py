@@ -10,7 +10,7 @@ import re
 # Order matters: the first payload whose keywords appear wins.
 PAYLOAD_KEYWORDS = {
     "camera": ["camera", "imag", "photo", "picture", "pictures", "observe earth", "earth observation", "video"],
-    "radio_relay": ["radio", "relay", "communicat", "comms", "messag", "iot", "ham ", "amateur", "internet", "transponder"],
+    "radio_relay": ["radio", "relay", "communicat", "comms", "messag", "iot", "ham ", "amateur", "internet", "transponder", "beacon"],
     "sensor": ["sensor", "measur", "radiation", "magnetometer", "magnetic", "temperature", "spectrometer",
                "detector", "weather", "atmospher"],
 }

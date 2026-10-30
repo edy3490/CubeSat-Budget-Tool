@@ -36,7 +36,7 @@ SPEC_TOOL = {
             "size_u": {"type": "integer", "enum": list(ALLOWED_SIZES),
                        "description": "CubeSat size in U. Omit if not stated. For a size not in the list (2U, 4U), use the next larger one."},
             "payload": {"type": "string", "enum": list(PAYLOADS),
-                        "description": "Main instrument. camera = imaging; radio_relay = communications; sensor = measuring something (radiation, magnetic field, weather)."},
+                        "description": "Main instrument. camera = imaging; radio_relay = communications, including a beacon or transponder (anything whose job is to send or relay radio signals); sensor = measuring something (radiation, magnetic field, weather)."},
             "orbit": {"type": "string", "enum": list(ORBITS),
                       "description": "LEO for general low orbit, SSO for sun-synchronous. Omit if not stated."},
             "altitude_km": {"type": "number", "description": "Orbit altitude in km. Omit if not stated."},

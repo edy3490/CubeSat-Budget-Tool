@@ -486,6 +486,21 @@ class DescriptionAndExtrasTest(Base):
         self.assertIn('Request: "3U camera cubesat"', prompt)
         self.assertIn('"why":', prompt)                           # the designer's reasons are passed on
 
+    def test_designer_notes_reach_the_model_and_the_cache_key(self):
+        g, client = self.gen()
+        note = "No attitude-control unit: it relies on passive magnetic stabilization."
+        g.generate(self.d, request={"text": "1U beacon", "design_notes": [note]})
+        self.assertIn("Designer's notes on the parts list", client.calls[0]["messages"][0]["content"])
+        self.assertIn("passive magnetic stabilization", client.calls[0]["messages"][0]["content"])
+        self.assertNotEqual(SceneGenerator.cache_key(self.d, {"design_notes": [note]}), SceneGenerator.cache_key(self.d, {}))
+
+    def test_command_line_runs(self):
+        from visualizer.__main__ import main
+        with mock.patch("visualizer.__main__.TokenUsage", lambda: self.usage), \
+             mock.patch("sys.stdout", new_callable=__import__("io").StringIO) as out:
+            self.assertEqual(main(["--no-llm", "1U beacon"]), 0)
+        self.assertIn("tokens so far", out.getvalue())
+
     def test_unusual_request_gets_extras_saved_apart_and_reused(self):
         g, client = self.gen()
         client.extras = [LASER]

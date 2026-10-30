@@ -57,8 +57,9 @@ def main(argv=None) -> int:
     if r.data.get("off_topic"):
         print("That doesn't look like a satellite idea.")
         return 1
-    request = {"text": " ".join(args.idea), "goal": r.spec.mission_goal, "notes": r.spec.notes}
-    out = SceneGenerator(budget).generate(r.data["design"], use_llm=not args.no_llm, request=request)
+    request = {"text": " ".join(args.idea), "goal": r.spec.mission_goal, "notes": r.spec.notes,
+               "design_notes": r.data["design"]["decisions"]}
+    out = SceneGenerator(usage).generate(r.data["design"], use_llm=not args.no_llm, request=request)
     if args.json:
         print(json.dumps(out, indent=1))
         return 0

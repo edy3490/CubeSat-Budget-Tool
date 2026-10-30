@@ -155,7 +155,9 @@ class State:
     def respond(self, r, llm_used: bool, previous_id: str | None = None) -> dict:
         """Package a designer Result in the page's response shape."""
         # What the user asked for: the 3D call uses it to explain the satellite and add extras.
-        request = {"text": r.data["idea"], "goal": r.spec.mission_goal, "notes": r.spec.notes}
+        # The designer's notes (e.g. no attitude-control unit) keep the 3D description consistent with the parts list.
+        request = {"text": r.data["idea"], "goal": r.spec.mission_goal, "notes": r.spec.notes,
+                   "design_notes": r.data["design"]["decisions"]}
         design_id = self.put({"spec": r.spec.model_dump(), "design": r.data["design"],
                               "previous_id": previous_id, "request": request})
         return {

@@ -74,6 +74,7 @@ How to lay it out:
 
 Explain it for a reader who isn't a spacecraft engineer, in plain words:
 - "role" for each part you place: one sentence on what it does in this satellite and why this part suits the job. Use the designer's reason ("why") when given.
+- Where the designer's notes say how the satellite works (for example no attitude-control unit, so it relies on passive magnetic stabilization), the description must agree with them.
 - description.overview: 2-3 sentences on how the satellite does its mission: what collects the data or does the job, how commands and data reach the ground, where power comes from, how it points.
 - description.layout: 2-3 sentences justifying the arrangement: why the main parts sit where they do and how that leads to the fit verdict.
 - fit.verdict (fits, tight or does_not_fit) with one sentence why, and a one-sentence summary of the layout.
@@ -182,6 +183,8 @@ def build_prompt(design: dict, todo: list[dict], kept: list[dict], request: dict
         lines.append(f"Mission goal: {json.dumps(request['goal'])}")
     if request.get("notes"):
         lines.append(f"Other requests: {json.dumps(request['notes'])}")
+    if request.get("design_notes"):
+        lines.append(f"Designer's notes on the parts list: {json.dumps(request['design_notes'])}")
     env = sc.envelope(design)
     lo, hi = sc.inside_z(env)
     need = sc.inside_stack_mm(design)
@@ -245,7 +248,7 @@ class SceneGenerator:
         # The goal and extra requests change the description and extras, so they're part of the key.
         request = request or {}
         sig = ([PROMPT_VERSION, design["form_factor"]] + [(p["slot"], p["part"], p["quantity"]) for p in design["parts"]]
-               + [request.get("goal", ""), request.get("notes", "")])
+               + [request.get("goal", ""), request.get("notes", ""), request.get("design_notes") or []])
         return hashlib.sha256(json.dumps(sig).encode()).hexdigest()[:16]
 
     def generate(self, design: dict, regenerate: bool = False, use_llm: bool = True,
