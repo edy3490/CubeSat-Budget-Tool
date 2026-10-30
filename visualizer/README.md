@@ -101,6 +101,32 @@ The model output is only ever drawn as boxes and cylinders, never run as code. S
 
 Coordinates are in mm, with the origin at the center of the structure. z runs along the rails: +z is the top (zenith) end and -z is the Earth-facing end.
 
+## Export to CAD (`export.py`)
+
+The 3D toolbar has two export buttons:
+
+| Button | File | Best for |
+|---|---|---|
+| **Export STEP** | `.step` (AP214) solid assembly | CAD: SolidWorks, Fusion 360, FreeCAD, Onshape, Inventor |
+| **Export STL** | `.stl` binary triangle mesh | 3D printing (slicers), mesh tools, quick viewers |
+
+- **STEP:**
+  - CAD tools import it as solid bodies, not a mesh.
+  - It's an assembly with one component per part, named as on the page ("Solar panel (2/4)"), and one solid per box or cylinder.
+  - Each solid is coloured by its material.
+- **STL:**
+  - One mesh with no part names or colours; cylinders have 48 sides.
+  - Units are mm. STL files don't store units, so pick mm if the importer asks.
+- Both formats:
+  - use the body frame above (mm, origin at the center of the structure);
+  - export what's on screen: the model's drawing once it has arrived, otherwise the quick layout, and exploded if the view is spread out.
+- The server endpoint is `POST /api/export {"design_id", "format": "step" | "stl", "exploded"}`.
+- Only the standard library is used. Boxes and cylinders are written straight out as B-rep (STEP) or triangles (STL).
+- Both outputs were checked in OpenCASCADE, the geometry kernel FreeCAD uses:
+  - STEP: every solid is valid, the volumes match the scene, and the names and colours read back.
+  - STL: the file reads cleanly, and the tests check that every triangle faces outward.
+- Surface textures (cells, traces) aren't exported; they're drawn by the page.
+
 ## Run it
 
 From the repo root, with the parser's venv:
@@ -124,7 +150,8 @@ sat-parser/.venv/bin/python -m pytest visualizer/tests   # offline: fake client 
 | `generator.py` | Prompt, schema, model choice, description and extras, edits, fallbacks, cache |
 | `budget.py` | The Sonnet token budget (hard cap, saved to `usage.json`) |
 | `scene.py` | Scene format, repair pass, and the rule-based layout and volume check |
+| `export.py` | The scene as a STEP assembly or an STL mesh for CAD |
 | `__main__.py` | Command line |
 | `tests/` | Offline tests for the visualizer and the web API: `python -m pytest visualizer/tests` |
-| `../server.py` | Local web server: serves the page and its API (`/api/budget`, `/api/cubesat-chat`, `/api/visual`, `/api/tokens`) |
+| `../server.py` | Local web server: serves the page and its API (`/api/budget`, `/api/cubesat-chat`, `/api/visual`, `/api/export`, `/api/tokens`) |
 | `../front-end/index.html` | The web page: chat, budget, flags, 3D model, build plan |

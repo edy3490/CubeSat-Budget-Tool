@@ -140,6 +140,8 @@ details ol{margin:6px 0 2px;padding-left:20px;font-size:13.5px;display:flex;flex
               <button type="button" id="labelsBtn" aria-pressed="true" disabled>Labels</button>
               <button type="button" id="fitBtn" disabled>Reset view</button>
               <button type="button" id="regenBtn" disabled>Redraw</button>
+              <button type="button" id="stepBtn" disabled title="Download as a STEP file: named, coloured solid parts for CAD (SolidWorks, Fusion 360, FreeCAD, Onshape...)">Export STEP</button>
+              <button type="button" id="stlBtn" disabled title="Download as an STL mesh: for 3D printing and mesh tools; no part names or colours">Export STL</button>
             </div>
           </div>
           <div class="vfoot"><div class="budget" id="budget" hidden></div></div>
@@ -564,7 +566,7 @@ function renderPlan(plan){
 function showScene(sceneData, info){
   if (!viewer) return;
   viewer.load(sceneData);
-  ["explodeBtn", "explodeRange", "labelsBtn", "fitBtn"].forEach(id => $(id).disabled = false);
+  ["explodeBtn", "explodeRange", "labelsBtn", "fitBtn", "stepBtn", "stlBtn"].forEach(id => $(id).disabled = false);
   $("regenBtn").disabled = !llmOn || !!info.pending;
   $("regenBtn").textContent = info.source === "default" && !info.pending ? "Draw with AI" : "Redraw";
   const badge = $("vBadge");
@@ -692,6 +694,27 @@ if (viewer) {
     $("labelsBtn").setAttribute("aria-pressed", on); viewer.setLabels(on);
   });
   $("fitBtn").addEventListener("click", () => viewer.fit());
+  const exportModel = async (format, btn) => {
+    if (!current) return;
+    const label = btn.textContent;
+    btn.disabled = true; btn.textContent = "Exporting…";
+    try {
+      // Exports what's on screen: assembled, or exploded if the view is spread out.
+      const res = await fetch("/api/export", {method:"POST", headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({ design_id: current.design_id, format, exploded: viewer.exploded })});
+      if (!res.ok) { let d = ""; try { d = (await res.json()).detail || ""; } catch (e) {} throw new Error("Server returned " + res.status + (d ? ": " + d : "")); }
+      const name = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") || "")?.[1] || "cubesat." + format;
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(await res.blob()); a.download = name;
+      document.body.append(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    } catch (err) {
+      $("vNote").textContent = format.toUpperCase() + " export failed: " + err.message;
+    }
+    btn.disabled = false; btn.textContent = label;
+  };
+  $("stepBtn").addEventListener("click", e => exportModel("step", e.currentTarget));
+  $("stlBtn").addEventListener("click", e => exportModel("stl", e.currentTarget));
   $("regenBtn").addEventListener("click", async () => {
     let t = null; try { t = await (await fetch("/api/tokens")).json(); } catch (e) {}
     requestVisual(true, t?.active_model);
