@@ -5,7 +5,7 @@ public dimensions where known, and estimated from mass and form factor where not
 (`estimate=True`). The 34 parts come from running 1,536 different satellite ideas
 through the designer; 8 alternates it can pick are included too.
 Run `python -m visualizer --library` to list them and check coverage.
-Parts drawn by Sonnet/Haiku at runtime live in ../generated/ instead (see ../README.md).
+Parts drawn by Sonnet at runtime live in ../generated/ instead (see ../README.md).
 
 Each drawing is in the part's own frame, in mm, centered on its bounding box,
 with its own +z as "up" (see placement.py):

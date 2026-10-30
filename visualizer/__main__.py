@@ -3,8 +3,8 @@
     python -m visualizer "3U camera cubesat"      # design it, generate the 3D scene, print a summary
     python -m visualizer --json "3U camera"       # print the full scene JSON
     python -m visualizer --no-llm "3U camera"     # default layout only, no API calls
-    python -m visualizer --budget                 # show the Sonnet token budget
-    python -m visualizer --reset-budget           # start the 25k Sonnet budget over
+    python -m visualizer --budget                 # show the Sonnet token count and cost so far
+    python -m visualizer --reset-budget           # start the count over
     python -m visualizer --library                # list the part library and check it covers the designer
 """
 from __future__ import annotations
@@ -14,7 +14,7 @@ import json
 import sys
 from pathlib import Path
 
-from .budget import TokenBudget
+from .budget import TokenUsage
 from .generator import SceneGenerator
 
 REPO = Path(__file__).resolve().parent.parent
@@ -25,7 +25,7 @@ def main(argv=None) -> int:
     ap.add_argument("idea", nargs="*")
     ap.add_argument("--json", action="store_true", help="print the full scene JSON")
     ap.add_argument("--no-llm", action="store_true", help="default layout only, no API calls")
-    ap.add_argument("--budget", action="store_true", help="show the token budget")
+    ap.add_argument("--budget", action="store_true", help="show the Sonnet token count and cost so far")
     ap.add_argument("--reset-budget", action="store_true", help="reset the Sonnet token count to 0")
     ap.add_argument("--library", action="store_true", help="list the part library and check coverage")
     args = ap.parse_args(argv)
@@ -33,12 +33,12 @@ def main(argv=None) -> int:
     if args.library:
         return show_library()
 
-    budget = TokenBudget()
+    usage = TokenUsage()
     if args.reset_budget:
-        budget.reset()
+        usage.reset()
         print("Sonnet token count reset to 0.")
     if args.budget or args.reset_budget:
-        print(json.dumps(budget.status(), indent=2))
+        print(json.dumps(usage.status(), indent=2))
         if not args.idea:
             return 0
     if not args.idea:
@@ -84,8 +84,8 @@ def main(argv=None) -> int:
         print("attempt:", a)
     for note in out["repairs"]:
         print("repair:", note)
-    b = out["budget"]
-    print(f"Sonnet budget: {b['sonnet_tokens_used']:,} / {b['sonnet_token_limit']:,} tokens used; next call uses {b['active_model']}")
+    t = out["tokens"]
+    print(f"{t['model']}: {t['tokens_used']:,} tokens so far, about ${t['cost_usd']:.2f}")
     return 0
 
 

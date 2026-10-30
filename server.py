@@ -6,9 +6,9 @@
 API (POST bodies are JSON; errors come back as {"detail": "..."}):
     POST /api/budget        {}                              -> starter design
     POST /api/cubesat-chat  {"messages": [...], "spec": {}} -> {"reply", "spec", "budget", ...}
-    POST /api/visual        {"design_id", "regenerate"}     -> 3D scene (Sonnet until 25k tokens, then Haiku)
+    POST /api/visual        {"design_id", "regenerate"}     -> 3D scene placed by Sonnet
     POST /api/export        {"design_id", "format", "exploded", "name"} -> the 3D model as a STEP or STL file for CAD
-    GET  /api/tokens                                        -> Sonnet token budget
+    GET  /api/tokens                                        -> Sonnet tokens and cost so far
 
 `spec` is opaque to the page: it sends back whatever the last response gave it.
 `budget` is the page's summary shape (mass, power, cost, rows, notes); the full
@@ -150,7 +150,7 @@ class State:
             return self._designs.get(key) if isinstance(key, str) else None
 
     def tokens(self) -> dict:
-        return {**self.generator.budget.status(), "llm": self.use_llm}
+        return {**self.generator.usage.status(), "llm": self.use_llm}
 
     def respond(self, r, llm_used: bool, previous_id: str | None = None) -> dict:
         """Package a designer Result in the page's response shape."""
@@ -323,11 +323,10 @@ def main(argv=None) -> int:
     use_llm = has_key and not args.no_llm
     Handler.state = State(use_llm)
     httpd = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
-    b = Handler.state.generator.budget.status()
+    t = Handler.state.generator.usage.status()
     print(f"CubeSat prototype: http://localhost:{args.port}", flush=True)
     if use_llm:
-        print(f"3D visuals: {b['sonnet_model']} until {b['sonnet_token_limit']:,} tokens "
-              f"({b['sonnet_tokens_used']:,} used so far), then {b['haiku_model']}.", flush=True)
+        print(f"3D visuals: {t['model']}, no limit ({t['tokens_used']:,} tokens so far, about ${t['cost_usd']:.2f}).", flush=True)
     else:
         print("No API key (or --no-llm): keyword parser and the default 3D layout only.", flush=True)
     print("Ctrl+C to stop.", flush=True)

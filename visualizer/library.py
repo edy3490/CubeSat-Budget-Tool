@@ -3,7 +3,7 @@
 Two sources, kept in separate folders (see parts/README.md):
 
     parts/opus/       drawn by hand by Claude Opus in the coding session. Checked first.
-    parts/generated/  drawn by Sonnet/Haiku at runtime, for parts the Opus set doesn't have
+    parts/generated/  drawn by Sonnet at runtime, for parts the Opus set doesn't have
                       (catalog parts it's missing, and extras invented for unusual requests
                       like "a satellite with a laser"). One JSON file per part, saved the
                       first time it's drawn and reused after that. Meant to be reviewed

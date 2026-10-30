@@ -5,7 +5,7 @@ The 3D visualizer draws each satellite from ready-made part drawings. They come 
 | Folder | Drawn by | How |
 |---|---|---|
 | `opus/drawings.py` | Claude Opus, in the coding session (not through the API) | Python, using the helpers at the top of the file. Real dimensions where known; estimates are marked `estimate=True`. Checked first. |
-| `generated/*.json` | Sonnet or Haiku, at runtime | Saved automatically the first time the model draws a part the Opus set doesn't have. One file per part, reused from then on. Local to each machine: these files aren't in git. |
+| `generated/*.json` | Sonnet, at runtime | Saved automatically the first time the model draws a part the Opus set doesn't have. One file per part, reused from then on. Local to each machine: these files aren't in git. |
 
 The model draws a part, and a file appears in `generated/`, in two cases:
 

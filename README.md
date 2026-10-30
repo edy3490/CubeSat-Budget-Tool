@@ -55,6 +55,6 @@ Put `ANTHROPIC_API_KEY=...` in `sat-parser/.env` to use Claude. Without a key it
 | `database/`      | Parts table (`cubesat.db`)                                                            |
 | `budget_engine/` | Mass, power, orbit and cost math                                                      |
 | `designer/`      | Picks parts, runs the checks, makes the build plan                                    |
-| `visualizer/`    | 3D layout of the design (Sonnet until 25k tokens, then Haiku) and STEP/STL export for CAD |
+| `visualizer/`    | 3D layout of the design (Sonnet, no token limit) and STEP/STL export for CAD                |
 | `front-end/`     | `index.html`: the web page (chat, budget, flags, 3D model, build plan)                |
 | `server.py`      | Serves the page and its API, running the designer and visualizer                      |

@@ -17,9 +17,10 @@ finished layouts are saved to scene_cache.json, so a design seen before costs
 nothing, even after a restart; and copies of a part (four solar panels) are
 described once.
 
-Sonnet (effort: medium) is used while the 25k-token budget lasts, then Haiku.
-If a call fails, the next model is tried; the rule-based layout (which uses
-the library too) is the last resort, so a scene always comes back.
+Sonnet (effort: medium) places every scene; there's no token limit, and usage.json
+keeps a running count and cost. If its answer is cut off it's asked once more with
+the most room; if it fails, the rule-based layout (which uses the library too) comes
+back instead, so a scene always comes back.
 """
 from __future__ import annotations
 
@@ -31,7 +32,7 @@ from typing import Optional
 
 from . import library
 from . import scene as sc
-from .budget import HAIKU_MODEL, SONNET_MODEL, TokenBudget
+from .budget import SONNET_MODEL, TokenUsage
 from .placement import SPINS, UPS, bbox, place
 
 MAX_OUTPUT = 14000           # hard ceiling for one call
@@ -46,8 +47,8 @@ OUT_BASE, OUT_PER_PLACE, OUT_PER_DRAW, OUT_EXTRAS = 500, 80, 550, 900
 SONNET_THINKING = os.environ.get("VISUALIZER_SONNET_THINKING", "off")
 # Medium matched high on layout quality in a side-by-side test, with ~9% less output.
 SONNET_EFFORT = os.environ.get("VISUALIZER_SONNET_EFFORT", "medium")
-THINKING_OFF = {SONNET_MODEL: {"type": "between_tools"}, HAIKU_MODEL: {"type": "disabled"}}
-MODEL_SOURCES = ("sonnet", "haiku", "cache", "reused")
+THINKING_OFF = {"type": "between_tools"}
+MODEL_SOURCES = ("sonnet", "cache", "reused")    # layouts an edit can build on (not the rule-based one)
 KEEP_SCENES = 40             # finished layouts kept on disk
 MAX_DRAWN_EXTRAS = 12        # earlier drawn extras offered for reuse in each prompt
 
@@ -213,13 +214,6 @@ def build_prompt(design: dict, todo: list[dict], kept: list[dict], request: dict
             + json.dumps(rows, separators=(",", ":")))
 
 
-def _estimate_input_tokens(system: str, prompt: str) -> int:
-    # Deliberately high (JSON runs about 3-3.5 characters per token) so the hard cap holds:
-    # the budget reserves this before the call and the real count is usually lower.
-    # The output format costs more than its JSON length suggests (~1,850 tokens measured with count_tokens).
-    return int((len(system) + len(prompt) + len(json.dumps(SCENE_SCHEMA))) / 2.5) + 1200
-
-
 def _number(v, lo, hi):
     try:
         v = float(v)
@@ -228,14 +222,16 @@ def _number(v, lo, hi):
     return round(min(max(v, lo), hi), 3) if v == v else None
 
 
+class _CutOff(RuntimeError):
+    """The model ran out of output tokens before finishing."""
+
+
 class SceneGenerator:
-    def __init__(self, budget: Optional[TokenBudget] = None, client=None):
-        self.budget = budget or TokenBudget()
-        # Smallest Sonnet call worth making: a full placement of a typical design (for the status line).
-        self.budget.min_call = _estimate_input_tokens(SYSTEM_PROMPT, "x" * 4500) + OUT_BASE + 16 * OUT_PER_PLACE + OUT_EXTRAS
+    def __init__(self, usage: Optional[TokenUsage] = None, client=None):
+        self.usage = usage or TokenUsage()
         self._client = client
         self._lock = threading.Lock()
-        self._cache_path = self.budget.path.with_name("scene_cache.json")
+        self._cache_path = self.usage.path.with_name("scene_cache.json")
         self._cache: dict[str, dict] = self._load_cache()
 
     def client(self):
@@ -255,9 +251,9 @@ class SceneGenerator:
     def generate(self, design: dict, regenerate: bool = False, use_llm: bool = True,
                  previous: Optional[dict] = None, request: Optional[dict] = None) -> dict:
         """Lay the design out and explain it. Returns {"scene", "source", "model", "usage", "attempts",
-        "repairs", "mode", "placed", "reused", "drawn", "saved", "budget"}.
+        "repairs", "mode", "placed", "reused", "drawn", "saved", "tokens"}.
 
-        source: "sonnet" / "haiku" (model call), "cache" (seen before), "reused" (an edit where
+        source: "sonnet" (model call), "cache" (seen before), "reused" (an edit where
         nothing needed placing) or "default" (no model, or every call failed).
         previous: {"design", "scene", "source"} of the design this one was edited from, if any.
         request: {"text", "goal", "notes"}: what the user asked for (drives the description and extras).
@@ -267,7 +263,7 @@ class SceneGenerator:
             with self._lock:
                 hit = self._cache.get(key)
             if hit:
-                return {**hit, "source": "cache", "cached_from": hit["source"], "budget": self.budget.status()}
+                return {**hit, "source": "cache", "cached_from": hit["source"], "tokens": self.usage.status()}
 
         insts = sc.instances(design)
         kept = {} if regenerate else self._carry_over(design, previous)
@@ -285,39 +281,38 @@ class SceneGenerator:
             prompt = build_prompt(design, todo, list(kept.values()), request, earlier_extras)
             need = OUT_BASE + OUT_PER_PLACE * len(todo) + OUT_PER_DRAW * n_draw + OUT_EXTRAS
             max_out = min(MAX_OUTPUT, 2 * need + 600)
-            model, max_tokens, reservation = self.budget.reserve(
-                _estimate_input_tokens(SYSTEM_PROMPT, prompt), max_out, need + 300)
-            order = [(model, max_tokens, reservation)]
-            if model == SONNET_MODEL:
-                order.append((HAIKU_MODEL, max_out, 0))
-            for model, max_tokens, reservation in order:
+            # A cut-off answer gets one more try with the most room; any other failure falls back
+            # to the rule-based layout (the SDK already retries dropped connections and overloads).
+            for max_tokens in dict.fromkeys((max_out, MAX_OUTPUT)):
                 try:
-                    raw, usage = self._call(model, max_tokens, SYSTEM_PROMPT, prompt, reservation)
-                    attempts.append({"model": model, "ok": True, **usage})
-                    scene, repairs, saved = self._assemble(raw, design, kept, request, model)
-                    result = {"scene": scene, "source": "sonnet" if model == SONNET_MODEL else "haiku",
-                              "model": model, "usage": usage, "repairs": repairs,
-                              "effort": SONNET_EFFORT if model == SONNET_MODEL else None}
+                    raw, usage = self._call(max_tokens, SYSTEM_PROMPT, prompt)
+                    attempts.append({"model": SONNET_MODEL, "ok": True, **usage})
+                    scene, repairs, saved = self._assemble(raw, design, kept, request, SONNET_MODEL)
+                    result = {"scene": scene, "source": "sonnet", "model": SONNET_MODEL, "usage": usage,
+                              "repairs": repairs, "effort": SONNET_EFFORT}
                     info["saved"] = saved
                     break
-                except Exception as e:  # noqa: BLE001 - any failure moves on to the next option
-                    attempts.append({"model": model, "ok": False, "error": f"{type(e).__name__}: {str(e)[:200]}"})
+                except Exception as e:  # noqa: BLE001 - report it, then retry or fall back
+                    attempts.append({"model": SONNET_MODEL, "ok": False, "error": f"{type(e).__name__}: {str(e)[:200]}"})
+                    if not isinstance(e, _CutOff):
+                        break
         if result is None:
             result = {"scene": sc.default_scene(design), "source": "default", "model": None,
                       "usage": None, "repairs": []}
         result.update(info, attempts=attempts)
         if result["source"] != "default":
             self._remember(key, result)
-        return {**result, "budget": self.budget.status()}
+        return {**result, "tokens": self.usage.status()}
 
     # ---- helpers
 
     def _load_cache(self) -> dict:
         try:
             data = json.loads(self._cache_path.read_text())
-            return data if isinstance(data, dict) else {}
         except (OSError, ValueError):
             return {}
+        # Layouts Haiku made (back when it took over after a token limit) are dropped: Sonnet redraws them.
+        return {k: v for k, v in data.items() if isinstance(v, dict) and v.get("source") == "sonnet"} if isinstance(data, dict) else {}
 
     def _remember(self, key: str, result: dict) -> None:
         with self._lock:
@@ -437,31 +432,22 @@ class SceneGenerator:
         sc.explode(fixed, design)
         return fixed, repairs, saved
 
-    def _call(self, model: str, max_tokens: int, system: str, prompt: str, reservation: int) -> tuple[dict, dict]:
-        kwargs = {"output_config": {"format": {"type": "json_schema", "schema": SCENE_SCHEMA}}}
-        if model == SONNET_MODEL:
-            kwargs["output_config"]["effort"] = SONNET_EFFORT
-        if model == SONNET_MODEL and SONNET_THINKING == "adaptive":
-            kwargs["thinking"] = {"type": "adaptive"}
-        elif model in THINKING_OFF:
-            kwargs["thinking"] = THINKING_OFF[model]
-        try:
-            # The system prompt and output format never change, so cache them (read back at a tenth of the price).
-            resp = self.client().messages.create(
-                model=model, max_tokens=max_tokens,
-                system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
-                messages=[{"role": "user", "content": prompt}], **kwargs)
-        except Exception:
-            self.budget.release(reservation)
-            raise
+    def _call(self, max_tokens: int, system: str, prompt: str) -> tuple[dict, dict]:
+        kwargs = {"output_config": {"format": {"type": "json_schema", "schema": SCENE_SCHEMA}, "effort": SONNET_EFFORT},
+                  "thinking": {"type": "adaptive"} if SONNET_THINKING == "adaptive" else THINKING_OFF}
+        # The system prompt and output format never change, so cache them (read back at a tenth of the price).
+        resp = self.client().messages.create(
+            model=SONNET_MODEL, max_tokens=max_tokens,
+            system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
+            messages=[{"role": "user", "content": prompt}], **kwargs)
         u = resp.usage
         usage = {"input_tokens": u.input_tokens, "output_tokens": u.output_tokens,
                  "cache_write": getattr(u, "cache_creation_input_tokens", 0) or 0,
                  "cache_read": getattr(u, "cache_read_input_tokens", 0) or 0}
-        self.budget.record(model, u.input_tokens, u.output_tokens, reservation, note=resp.stop_reason or "",
-                           cache_write=usage["cache_write"], cache_read=usage["cache_read"])
+        self.usage.record(SONNET_MODEL, u.input_tokens, u.output_tokens, note=resp.stop_reason or "",
+                          cache_write=usage["cache_write"], cache_read=usage["cache_read"])
         if resp.stop_reason == "max_tokens":
-            raise RuntimeError(f"ran out of output tokens ({max_tokens})")
+            raise _CutOff(f"ran out of output tokens ({max_tokens})")
         text = "".join(b.text for b in resp.content if getattr(b, "type", None) == "text")
         data = json.loads(text)
         if not isinstance(data, dict) or not isinstance(data.get("parts"), list):

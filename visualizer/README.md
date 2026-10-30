@@ -13,7 +13,7 @@ Every part the designer picks is drawn ahead of time, so most of the time the mo
 | Folder | Drawn by |
 |---|---|
 | `parts/opus/drawings.py` | **Claude Opus**, in the coding session (not through the API). 37 drawings covering all 34 parts the designer used across 1,536 test ideas, plus 8 alternates. Real dimensions where known; estimates are marked. Checked first. |
-| `parts/generated/*.json` | **Sonnet or Haiku**, at runtime. Saved automatically the first time the model draws something the Opus set lacks: a catalog part with no drawing, or an extra invented for an unusual request (laser, robotic arm, ...). Reused from then on. Each file records who drew it, when, why, and a note asking Opus to review and redraw it. |
+| `parts/generated/*.json` | **Sonnet**, at runtime. Saved automatically the first time the model draws something the Opus set lacks: a catalog part with no drawing, or an extra invented for an unusual request (laser, robotic arm, ...). Reused from then on. Each file records who drew it, when, why, and a note asking Opus to review and redraw it. |
 
 - Each part is drawn in its own frame, centered on its bounding box, with its own +z as "up". That's the components side of a board, the cells side of a panel, and the outward side of an antenna. A camera's lens is on its own -z.
 - `python -m visualizer --library` lists both sets and checks that nothing the designer picks is missing.
@@ -51,36 +51,35 @@ The rule-based layout uses the library too, so the instant model has the same de
 
 | | |
 |---|---|
-| **Sonnet 5.5, effort medium** | used until the Sonnet budget of **25,000 tokens** (input + output, cached input at its price) is spent |
-| **Haiku 5.5** | used after that, and as a backup if a Sonnet call fails |
-| **Rule-based layout** | shown instantly while the model works, and used when there's no API key or every call fails |
+| **Sonnet 5.5, effort medium** | places every scene. No token limit; a running count and cost are kept (below). Haiku isn't used for layouts: its placements were noticeably worse. |
+| **Rule-based layout** | shown instantly while the model works, and used when there's no API key or the call fails |
 
-Measured costs with Sonnet, as counted against the budget:
+If Sonnet's answer is cut off (it ran out of output tokens), it's asked once more with the most room. Other errors (the SDK already retries dropped connections and overloads) fall back to the rule-based layout.
 
-| | Tokens | Time |
-|---|---|---|
-| New design, within 5 minutes of the last call | about 3.6k (1.9k in, 3.3k cached = 0.3k, 1.4k out) | ~10 s |
-| New design after a 5-minute gap (cache rewritten) | about 7.5k (1.9k in, 3.3k written = 4.2k, 1.4k out) | ~10 s |
-| Edit | less: only new or changed parts are placed | ~7 s |
-| Same parts list and request again | 0 (reused, even after a restart) | instant |
+Measured costs with Sonnet 5.5 ($2 per million input tokens, $0.20 cached, $10 output):
 
-So 25k covers about 6 designs made in a row. How the count is kept down:
+| | Tokens | Cost | Time |
+|---|---|---|---|
+| New design, within 5 minutes of the last call | about 6.6k (1.9k in, 3.3k read from cache, 1.4k out) | ~1.9¢ | ~10 s |
+| New design after a 5-minute gap (cache rewritten) | about 6.6k (1.9k in, 3.3k written to cache, 1.4k out) | ~2.6¢ | ~10 s |
+| Edit | less: only new or changed parts are placed | less | ~7 s |
+| Same parts list and request again | 0 (reused, even after a restart) | 0 | instant |
 
-- **Prompt caching.** The instructions and output format (~3.3k tokens) are the same on every call, so they're cached. A call within 5 minutes of the last reads them at a tenth of the price, and the budget counts them that way (a cache write counts 1.25x).
+How the cost is kept down:
+
+- **Prompt caching.** The instructions and output format (~3.3k tokens) are the same on every call, so they're cached. A call within 5 minutes of the last reads them at a tenth of the price.
 - **Finished layouts are saved** to `visualizer/scene_cache.json` (not in git, last 40 kept), so a design seen before costs nothing, even after a restart. A change to the instructions starts fresh.
 - **Copies are described once.** Later copies of a part (the second solar panel) are sent as `same_as` the first, and share its role sentence.
 - **Medium effort.** In a side-by-side test on three designs, medium matched high on layout quality with ~9% less output.
 
-- The 25k cap is hard. Before each Sonnet call the worst case is reserved (a deliberately high input estimate plus the maximum output), so a call can't go over the limit. If the worst case doesn't fit, it uses Haiku.
-- The count is saved in `visualizer/usage.json` (not in git), so it survives restarts.
-  - `python -m visualizer --budget` shows it.
+- The running count (every token, cached or not) and its cost are saved in `visualizer/usage.json` (not in git), so they survive restarts. The 3D view shows them.
+  - `python -m visualizer --budget` shows them.
   - `python -m visualizer --reset-budget` starts it over.
 - Scenes are reused by parts list and request, across restarts. **Redraw** asks for a fresh one.
 - **Thinking is off** by default; with it on, Sonnet spends thousands of tokens thinking per call. To turn it on, set `VISUALIZER_SONNET_THINKING=adaptive`.
 - Other settings (environment variables):
-  - `VISUALIZER_SONNET_MODEL`, `VISUALIZER_HAIKU_MODEL`
+  - `VISUALIZER_SONNET_MODEL`
   - `VISUALIZER_SONNET_EFFORT` (default `medium`)
-  - `VISUALIZER_SONNET_TOKEN_LIMIT`
   - `VISUALIZER_USAGE_FILE`
 
 ## What the model gets and returns
@@ -154,7 +153,7 @@ sat-parser/.venv/bin/python -m pytest visualizer/tests   # offline: fake client 
 |---|---|
 | `library.py` | Looks up a part's drawing (Opus first, then generated) and saves new generated drawings |
 | `parts/opus/drawings.py` | The parts Opus drew |
-| `parts/generated/` | Parts Sonnet/Haiku drew at runtime, one JSON file each, for Opus to review (local, not in git) |
+| `parts/generated/` | Parts Sonnet drew at runtime, one JSON file each, for Opus to review (local, not in git) |
 | `placement.py` | Turning and moving library parts into place; exploded-view offsets |
 | `generator.py` | Prompt, schema, model choice, description and extras, edits, fallbacks, cache |
 | `budget.py` | The Sonnet token budget (hard cap, saved to `usage.json`) |

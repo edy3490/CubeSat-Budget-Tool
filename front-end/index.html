@@ -674,7 +674,7 @@ async function requestVisual(regenerate, model){
     }
     if (seq !== visualSeq || current?.design_id !== id) return;   // a newer design replaced this one
     showScene(v.scene, { source: v.source, model: v.model, effort: v.effort, mode: v.mode, placed: v.placed, reused: v.reused });
-    renderBudget(v.budget);
+    renderTokens(v.tokens);
     if (v.source === "default") {
       const why = (v.attempts || []).map(a => modelName(a.model) + ": " + a.error).join("; ");
       $("vNote").textContent = "The model couldn't draw this one, so this is the rule-based layout." + (why ? " " + why : "");
@@ -688,15 +688,12 @@ async function requestVisual(regenerate, model){
   $("regenBtn").disabled = !llmOn;
 }
 
-function renderBudget(t){
+// Running count for the 3D model calls (no limit).
+function renderTokens(t){
   const el = $("budget");
-  if (!t || !llmOn) { el.hidden = true; return; }
+  if (!t || !llmOn || t.tokens_used == null) { el.hidden = true; return; }
   el.hidden = false;
-  const used = t.sonnet_tokens_used, lim = t.sonnet_token_limit, ratio = Math.min(1, used / lim);
-  const onSonnet = t.active_model === t.sonnet_model;
-  el.innerHTML = `${esc(modelName(t.sonnet_model))}: ${used.toLocaleString()} / ${lim.toLocaleString()} tokens<br>` +
-    (onSonnet ? `then ${esc(modelName(t.haiku_model))}` : `limit reached · now using ${esc(modelName(t.haiku_model))}`) +
-    `<div class="meter ${!onSonnet ? "over" : ratio > .7 ? "tight" : ""}"><i style="width:${Math.round(ratio * 100)}%"></i></div>`;
+  el.textContent = `${modelName(t.model)}: ${t.tokens_used.toLocaleString()} tokens so far · about $${(t.cost_usd || 0).toFixed(2)}`;
 }
 
 function showDesign(out, drawWithModel){
@@ -705,10 +702,10 @@ function showDesign(out, drawWithModel){
   render(out.budget);
   renderPlan(out.build_plan);
   llmOn = !!out.tokens?.llm;
-  renderBudget(out.tokens);
+  renderTokens(out.tokens);
   const pending = llmOn && drawWithModel;
-  showScene(out.quick_scene, { source: "default", pending, pendingModel: out.tokens?.active_model });
-  if (pending) requestVisual(false, out.tokens.active_model);
+  showScene(out.quick_scene, { source: "default", pending, pendingModel: out.tokens?.model });
+  if (pending) requestVisual(false, out.tokens.model);
 }
 
 if (viewer) {
@@ -762,7 +759,7 @@ if (viewer) {
   $("stlBtn").addEventListener("click", e => exportModel("stl", e.currentTarget));
   $("regenBtn").addEventListener("click", async () => {
     let t = null; try { t = await (await fetch("/api/tokens")).json(); } catch (e) {}
-    requestVisual(true, t?.active_model);
+    requestVisual(true, t?.model);
   });
 }
 
@@ -959,7 +956,7 @@ function openProject(p){
   if (p.design) {
     showDesign(p.design, false);
     if (p.scene) showScene(p.scene.data, p.scene.info);
-    fetch("/api/tokens").then(r => r.json()).then(t => { if (active === p) renderBudget(t); }).catch(() => {});
+    fetch("/api/tokens").then(r => r.json()).then(t => { if (active === p) renderTokens(t); }).catch(() => {});
   }
   renderProjects();
   renderChips();

@@ -8,7 +8,7 @@ Run `sat-parser/.venv/bin/python server.py` from the repo root and open http://l
 |---|---|---|
 | `POST /api/budget` | `{}` | Starter design: `{spec, budget, design, build_plan, quick_scene, tokens}` (`reply` is null) |
 | `POST /api/cubesat-chat` | `{messages, spec}` | Same fields plus `reply`. Send back the `spec` from the last response; it carries a `design_id` for follow-up edits |
-| `POST /api/visual` | `{design_id, regenerate}` | 3D scene drawn by Sonnet (Haiku after 25k tokens), see `visualizer/README.md` |
+| `POST /api/visual` | `{design_id, regenerate}` | 3D scene placed by Sonnet (no token limit; count and cost in `tokens`), see `visualizer/README.md` |
 | `GET /api/tokens` | | Sonnet token budget |
 
 Errors come back as `{"detail": "..."}`. `budget` keeps the shape `render(b)` expects (`mass`, `maxMass`, `massRatio`, `massState`, `watts`, `powRatio`, `powState`, `cost`, `rows`, `notes`), filled from real parts by `designer/`. Extra fields: `gen`, `hardware`, `launch`, `costIsMinimum`, `unpriced`, and per row `part_index`, `gen_w`, `estimate` (`k` is null when a part has no public price).

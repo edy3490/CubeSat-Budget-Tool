@@ -12,9 +12,9 @@ from types import SimpleNamespace
 from unittest import mock
 
 from designer import run
-from visualizer import SceneGenerator, TokenBudget, default_scene, repair
+from visualizer import SceneGenerator, TokenUsage, default_scene, repair
 from visualizer import library
-from visualizer.budget import HAIKU_MODEL, SONNET_MODEL
+from visualizer.budget import SONNET_MODEL, cost_usd
 from visualizer.placement import body_size, place
 from visualizer import scene as sc
 from visualizer.generator import build_prompt
@@ -74,7 +74,7 @@ class FakeClient:
 class Base(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.budget = TokenBudget(Path(self.tmp.name) / "usage.json", limit=25000)
+        self.usage = TokenUsage(Path(self.tmp.name) / "usage.json")
         self.generated = Path(self.tmp.name) / "generated"      # never write into the real library
         self.real_generated = library.GENERATED_DIR
         library.set_generated_dir(self.generated)
@@ -89,7 +89,7 @@ class Base(unittest.TestCase):
         designs = designs or [self.d]
         client.design_for = lambda prompt: next(
             (d for d in reversed(designs) if f"Satellite: {d['name']}" in prompt and d["form_factor"] in prompt), designs[-1])
-        return SceneGenerator(self.budget, client=client), client
+        return SceneGenerator(self.usage, client=client), client
 
 
 class LibraryTest(unittest.TestCase):
@@ -448,7 +448,7 @@ class TokenSavingTest(Base):
             self.assertTrue(r["same_as"].endswith(".1"))
         self.assertTrue(all(p.get("role") for p in out["scene"]["parts"]))
 
-    def test_static_prefix_is_cached_and_cache_reads_count_a_tenth(self):
+    def test_static_prefix_is_cached_and_cache_reads_cost_a_tenth(self):
         g, client = self.gen()
         orig = client.create
 
@@ -461,8 +461,10 @@ class TokenSavingTest(Base):
         g.generate(self.d)
         system = client.calls[0]["system"]
         self.assertEqual(system[0]["cache_control"], {"type": "ephemeral"})
-        self.assertEqual(self.budget.used, 500 + 1000 + 300)
-        self.assertEqual(self.budget._data["calls"][-1]["cache_read"], 3000)
+        self.assertEqual(self.usage.used, 500 + 1000 + 3000)
+        self.assertEqual(self.usage._data["calls"][-1]["cache_read"], 3000)
+        # $2/M input, $0.20/M cache read, $10/M output
+        self.assertAlmostEqual(self.usage.status()["cost_usd"], (500 * 2 + 3000 * 0.2 + 1000 * 10) / 1e6, places=6)
 
     def test_finished_layouts_survive_a_restart(self):
         g, client = self.gen()
@@ -558,49 +560,56 @@ class EditTest(Base):
         self.assertEqual((b["mode"], b["reused"]), ("full", 0))
 
 
-class BudgetTest(Base):
-    def test_sonnet_with_medium_effort_then_haiku_after_25k(self):
+class UsageTest(Base):
+    def test_always_sonnet_with_no_limit(self):
         g, client = self.gen()
-        sources = [g.generate(self.d, regenerate=True)["source"] for _ in range(10)]
-        self.assertEqual(sources[0], "sonnet")
-        self.assertEqual(sources[-1], "haiku")
-        self.assertLessEqual(self.budget.used, 25000)          # hard cap, never crossed
+        sources = [g.generate(self.d, regenerate=True)["source"] for _ in range(12)]
+        self.assertEqual(set(sources), {"sonnet"})
+        self.assertGreater(self.usage.used, 25000)             # the old cap is gone
+        self.assertEqual({c["model"] for c in client.calls}, {SONNET_MODEL})
         first = client.calls[0]
-        self.assertEqual(first["model"], SONNET_MODEL)
         self.assertEqual(first["output_config"]["effort"], "medium")
         self.assertEqual(first["thinking"], {"type": "between_tools"})
-        last = client.calls[-1]
-        self.assertEqual(last["model"], HAIKU_MODEL)
-        self.assertEqual(last["thinking"], {"type": "disabled"})
 
-    def test_count_survives_restart_and_reset(self):
+    def test_count_and_cost_survive_restart_and_reset(self):
         g, client = self.gen()
-        g.generate(self.d)
-        spent = 3000 + min(1200, client.calls[0]["max_tokens"])
-        again = TokenBudget(self.budget.path, limit=25000)
-        self.assertEqual(again.used, spent)
-        again.reset()
-        self.assertEqual(TokenBudget(self.budget.path).used, 0)
-
-    def test_failed_call_releases_its_reservation(self):
-        g, _ = self.gen(script={SONNET_MODEL: ["error"]})
         out = g.generate(self.d)
-        self.assertEqual(out["source"], "haiku")
-        self.assertEqual(self.budget._reserved, 0)
-        self.assertEqual(self.budget.used, 0)
+        out_tokens = min(1200, client.calls[0]["max_tokens"])
+        again = TokenUsage(self.usage.path)
+        self.assertEqual(again.used, 3000 + out_tokens)
+        self.assertAlmostEqual(again.status()["cost_usd"], cost_usd(3000, out_tokens), places=6)
+        self.assertEqual(out["tokens"]["tokens_used"], 3000 + out_tokens)
+        again.reset()
+        self.assertEqual(TokenUsage(self.usage.path).used, 0)
+
+    def test_an_old_budget_file_still_loads(self):
+        self.usage.path.write_text(json.dumps({"sonnet_tokens_used": 6850, "haiku_tokens_used": 0, "calls": []}))
+        self.assertEqual(TokenUsage(self.usage.path).used, 6850)
 
 
 class FallbackAndCacheTest(Base):
-    def test_truncated_sonnet_falls_back_to_haiku(self):
-        g, _ = self.gen(script={SONNET_MODEL: ["truncate"]})
+    def test_a_cut_off_answer_is_retried_with_more_room(self):
+        g, client = self.gen(script={SONNET_MODEL: ["truncate"]})
         out = g.generate(self.d)
-        self.assertEqual(out["source"], "haiku")
-        self.assertFalse(out["attempts"][0]["ok"])
+        self.assertEqual(out["source"], "sonnet")
+        self.assertEqual([a["ok"] for a in out["attempts"]], [False, True])
+        self.assertLess(client.calls[0]["max_tokens"], client.calls[1]["max_tokens"])
 
-    def test_everything_failing_gives_default_layout_uncached(self):
-        g, _ = self.gen(script={SONNET_MODEL: ["error"], HAIKU_MODEL: ["error"]})
+    def test_a_failed_call_gives_the_default_layout_uncached(self):
+        g, client = self.gen(script={SONNET_MODEL: ["error"]})
         self.assertEqual(g.generate(self.d)["source"], "default")
+        self.assertEqual(len(client.calls), 1)                      # no retry for an error the SDK already retried
         self.assertEqual(g.generate(self.d)["source"], "sonnet")    # the failure wasn't cached; it tried again
+
+    def test_layouts_haiku_made_are_not_reused(self):
+        g, _ = self.gen()
+        g.generate(self.d)
+        path = Path(self.tmp.name) / "scene_cache.json"
+        saved = json.loads(path.read_text())
+        path.write_text(json.dumps({k: {**v, "source": "haiku"} for k, v in saved.items()}))
+        again, client = self.gen()
+        self.assertEqual(again.generate(self.d)["source"], "sonnet")
+        self.assertEqual(len(client.calls), 1)
 
     def test_same_design_is_cached_and_redraw_skips_cache(self):
         g, client = self.gen()

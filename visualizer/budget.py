@@ -1,11 +1,8 @@
-"""Token budget for the 3D visuals: Sonnet until 25k tokens are spent, then Haiku.
+"""Token meter for the 3D visuals (Sonnet). No limit: it counts, so spend stays visible.
 
-The count (input + output tokens of every Sonnet call) is saved to a file so it
-survives restarts. It's a hard cap: before each Sonnet call the worst case
-(input estimate + max output) is reserved, and Sonnet is only used if that fits.
-
-Cached input counts at what it's billed: a cache read is a tenth of a token,
-a cache write one and a quarter (Sonnet 5.5 prices, 5-minute cache).
+The count is saved to a file so it survives restarts. tokens_used is every token of
+every call (input, cache writes, cache reads, output); cost_usd prices them at
+Sonnet 5.5 rates, so cached input shows as the cheap part it is.
 """
 from __future__ import annotations
 
@@ -16,31 +13,41 @@ import time
 from pathlib import Path
 
 SONNET_MODEL = os.environ.get("VISUALIZER_SONNET_MODEL", "claude-sonnet-5-5")
-HAIKU_MODEL = os.environ.get("VISUALIZER_HAIKU_MODEL", "claude-haiku-5-5")
-SONNET_TOKEN_LIMIT = int(os.environ.get("VISUALIZER_SONNET_TOKEN_LIMIT", "25000"))
-CACHE_READ_WEIGHT, CACHE_WRITE_WEIGHT = 0.1, 1.25
+# Sonnet 5.5, $ per million tokens: input, 5-minute cache write (1.25x), cache read (0.1x), output.
+PRICE_PER_MTOK = {"input": 2.00, "cache_write": 2.50, "cache_read": 0.20, "output": 10.00}
 USAGE_FILE = Path(os.environ.get("VISUALIZER_USAGE_FILE", Path(__file__).with_name("usage.json")))
 
 
-class TokenBudget:
-    def __init__(self, path: Path = USAGE_FILE, limit: int = SONNET_TOKEN_LIMIT, min_call: int = 6000):
+def cost_usd(input_tokens: int, output_tokens: int, cache_write: int = 0, cache_read: int = 0) -> float:
+    counts = {"input": input_tokens, "output": output_tokens, "cache_write": cache_write, "cache_read": cache_read}
+    return sum(PRICE_PER_MTOK[k] * int(v) for k, v in counts.items()) / 1e6
+
+
+class TokenUsage:
+    def __init__(self, path: Path = USAGE_FILE):
         self.path = Path(path)
-        self.limit = limit
-        self.min_call = min_call      # smallest Sonnet call worth making (input + output); only for status()
         self._lock = threading.Lock()
-        self._reserved = 0
         self._data = self._load()
 
     def _load(self) -> dict:
         try:
             data = json.loads(self.path.read_text())
-            if isinstance(data.get("sonnet_tokens_used"), int):
-                data.setdefault("haiku_tokens_used", 0)
-                data.setdefault("calls", [])
-                return data
-        except (OSError, ValueError, AttributeError):
+            if isinstance(data, dict) and "cost_usd" in data:
+                return {"tokens_used": int(data.get("tokens_used", 0)), "cost_usd": float(data["cost_usd"]),
+                        "calls": list(data.get("calls", []))}
+            if isinstance(data, dict):
+                # A file from the old 25k budget: its count weighted cached tokens and had no cost.
+                # Rebuild both from its call log (the last 50 calls), or keep the old count without one.
+                calls = [c for c in data.get("calls", []) if isinstance(c, dict) and "claude-sonnet" in str(c.get("model"))]
+                counts = [(int(c.get("input_tokens") or 0), int(c.get("output_tokens") or 0),
+                           int(c.get("cache_write") or 0), int(c.get("cache_read") or 0)) for c in calls]
+                if counts:
+                    return {"tokens_used": sum(map(sum, counts)), "cost_usd": round(sum(cost_usd(*n) for n in counts), 6),
+                            "calls": calls}
+                return {"tokens_used": int(data.get("sonnet_tokens_used", 0)), "cost_usd": 0.0, "calls": []}
+        except (OSError, ValueError, TypeError, AttributeError):
             pass
-        return {"sonnet_tokens_used": 0, "haiku_tokens_used": 0, "calls": []}
+        return {"tokens_used": 0, "cost_usd": 0.0, "calls": []}
 
     def _save(self) -> None:
         tmp = self.path.with_suffix(".tmp")
@@ -49,53 +56,26 @@ class TokenBudget:
 
     @property
     def used(self) -> int:
-        return self._data["sonnet_tokens_used"]
+        return self._data["tokens_used"]
 
-    def reserve(self, input_estimate: int, max_output: int, min_output: int) -> tuple[str, int, int]:
-        """Pick the model for the next call. Returns (model, max_tokens, reservation).
-
-        Sonnet if at least `min_output` tokens of output still fit under the limit,
-        with max_tokens trimmed so the call can't cross it. Otherwise Haiku.
-        Pass the reservation back to record() (or release() if the call fails).
-        """
-        with self._lock:
-            room = self.limit - self.used - self._reserved - input_estimate
-            if room >= min_output:
-                out = min(max_output, room)
-                self._reserved += input_estimate + out
-                return SONNET_MODEL, out, input_estimate + out
-            return HAIKU_MODEL, max_output, 0
-
-    def release(self, reservation: int) -> None:
-        with self._lock:
-            self._reserved = max(0, self._reserved - reservation)
-
-    def record(self, model: str, input_tokens: int, output_tokens: int, reservation: int = 0, note: str = "",
+    def record(self, model: str, input_tokens: int, output_tokens: int, note: str = "",
                cache_write: int = 0, cache_read: int = 0) -> None:
+        usd = cost_usd(input_tokens, output_tokens, cache_write, cache_read)
         with self._lock:
-            self._reserved = max(0, self._reserved - reservation)
-            key = "sonnet_tokens_used" if model == SONNET_MODEL else "haiku_tokens_used"
-            self._data[key] += round(int(input_tokens) + int(output_tokens)
-                                     + CACHE_WRITE_WEIGHT * int(cache_write) + CACHE_READ_WEIGHT * int(cache_read))
+            self._data["tokens_used"] += int(input_tokens) + int(output_tokens) + int(cache_write) + int(cache_read)
+            self._data["cost_usd"] = round(self._data["cost_usd"] + usd, 6)
             self._data["calls"] = (self._data["calls"] + [{
                 "at": time.strftime("%Y-%m-%d %H:%M:%S"), "model": model,
                 "input_tokens": input_tokens, "cache_write": cache_write, "cache_read": cache_read,
-                "output_tokens": output_tokens, "note": note,
+                "output_tokens": output_tokens, "cost_usd": round(usd, 6), "note": note,
             }])[-50:]
             self._save()
 
     def reset(self) -> None:
         with self._lock:
-            self._data = {"sonnet_tokens_used": 0, "haiku_tokens_used": 0, "calls": []}
+            self._data = {"tokens_used": 0, "cost_usd": 0.0, "calls": []}
             self._save()
 
     def status(self) -> dict:
         with self._lock:
-            used = self.used
-            return {
-                "sonnet_model": SONNET_MODEL, "haiku_model": HAIKU_MODEL,
-                "sonnet_tokens_used": used, "sonnet_token_limit": self.limit,
-                "sonnet_tokens_left": max(0, self.limit - used),
-                "haiku_tokens_used": self._data["haiku_tokens_used"],
-                "active_model": SONNET_MODEL if self.limit - used >= self.min_call else HAIKU_MODEL,
-            }
+            return {"model": SONNET_MODEL, "tokens_used": self.used, "cost_usd": round(self._data["cost_usd"], 4)}
