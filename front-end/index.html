@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>CubeSat Budget Tool</title>
+<script>try{const t=localStorage.getItem("cs_theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
 <script type="importmap">
 { "imports": {
   "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
@@ -83,6 +84,11 @@ td small{display:block;color:var(--muted);font-size:12px}tfoot td{border-top:1px
 .notes li.warn::before{background:var(--warn)}.notes li.bad::before{background:var(--bad)}.notes li.good::before{background:var(--ok)}
 .label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin:0 0 8px}
 @media (max-width:900px){html,body,.app{height:auto}.main{grid-template-columns:minmax(0,1fr)}.chat{height:70vh}.dash{overflow:visible}}
+
+/* Light/Dark mode button*/
+:root[data-theme="dark"]{--bg:#0a0d16;--pane:#141a2b;--card:#1b2338;--line:#2a3550;--fg:#eceef0;--muted:#98a0aa;--user-bg:#0a2147;--user-fg:#7fb0ff;--accent:#7fa2ff;--accent2:#5eead4;--ok:#58d39a;--warn:#f5a524;--bad:#ff7a70;--solar:#0b2150;--solar-line:#1f3f86;--payload:#3a1f06;--payload-line:#6b4414;--avi:#0b3322;--avi-line:#1d6446;--batt:#0b2150;--batt-line:#1f3f86;--view-top:#18203a;--view-bot:#0a0d16;--edge:#e6ebf5;color-scheme:dark}
+.theme{position:fixed;right:16px;bottom:16px;z-index:40;width:42px;height:42px;border-radius:50%;padding:0;font-size:18px;box-shadow:0 4px 16px rgba(0,0,0,.2)}
+
 /* real parts table */
 .dash>*{flex:none}td:first-child{white-space:normal;min-width:170px}tbody tr.hl td{background:color-mix(in srgb,var(--accent) 12%,transparent)}
 .quote{color:var(--muted);font-size:13px}.est{color:var(--warn)}
@@ -122,6 +128,7 @@ details ol{margin:6px 0 2px;padding-left:20px;font-size:13.5px;display:flex;flex
 </style>
 </head>
 <body>
+<button id="themeBtn" class="theme" type="button" aria-label="Switch between light and dark mode" title="Light / dark">🌙</button>
 <section class="land" id="land">
   <div class="hero">
     <h1>Budget your <span>CubeSat</span> mission</h1>
@@ -342,7 +349,8 @@ const viewer = await (async () => {
   const setEdgeColor = () => edgeMat.color.set(getComputedStyle(document.documentElement).getPropertyValue("--edge").trim() || "#222");
   setEdgeColor();
   matchMedia("(prefers-color-scheme: dark)").addEventListener("change", setEdgeColor);
-
+  addEventListener("themechange", setEdgeColor);
+  
   let root = null, groups = [], t = 0, target = 0, labelsOn = true, hovered = -1, onHover = () => {};
   let frames = null, autoFrame = true;     // camera framing for assembled (0) and exploded (1)
   canvas.addEventListener("wheel", () => { autoFrame = false; }, { passive: true });
@@ -762,6 +770,20 @@ function addMsg(kind, text){
   return d;
 }
 
+/* Light/Dark mode event */
+const root = document.documentElement, mq = matchMedia("(prefers-color-scheme: dark)");
+const isDark = () => root.dataset.theme ? root.dataset.theme === "dark" : mq.matches;
+const paintTheme = () => { $("themeBtn").textContent = isDark() ? "☀️" : "🌙"; $("themeBtn").setAttribute("aria-pressed", isDark()); };
+$("themeBtn").addEventListener("click", () => {
+  const next = isDark() ? "light" : "dark";
+  root.dataset.theme = next;
+  try { localStorage.setItem("cs_theme", next); } catch (e) {}
+  paintTheme();
+  window.dispatchEvent(new Event("themechange"));
+});
+mq.addEventListener("change", paintTheme);
+paintTheme();
+
 // Follow-up suggestions. `skip` hides one that already matches the current design.
 // Most are worded so the keyword parser understands them too (size, km, years, orbit, payload).
 const SUGGESTIONS = [
@@ -976,6 +998,166 @@ if (params.get("idea")) {
   if (params.get("view") === "exploded" && viewer) { viewer.setExplode(1, false); $("explodeBtn").setAttribute("aria-pressed", true); $("explodeBtn").textContent = "Assemble"; $("explodeRange").value = 100; }
 } else {
   $("landInput").focus();
+}
+</script>
+
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+const MU = 398600.4418, RE = 6371, VIS = 3, ORBIT_S = 16, L0 = 3.2, ASCENT = 9;   // VIS: altitude exaggeration; ORBIT_S: seconds per orbit on screen
+
+const css = document.createElement("style");
+css.textContent = `
+#lo{position:fixed;inset:0;z-index:50;background:#02040a;color:#e6ebf5;font:14px system-ui,sans-serif}
+#lo canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+#lo .hud{position:absolute;left:16px;top:16px;padding:12px 14px;border:1px solid #2a3550;border-radius:12px;background:rgba(10,13,22,.72);backdrop-filter:blur(6px);min-width:250px;line-height:1.75}
+#lo .hud div{display:flex;justify-content:space-between;gap:18px}#lo .hud b{font-weight:500;font-variant-numeric:tabular-nums}
+#lo .hud .t{font-weight:600;margin-bottom:4px;color:#5eead4}
+#lo .x{position:absolute;right:16px;top:16px;display:flex;gap:8px}
+#lo .big{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none;font-size:clamp(64px,14vw,160px);font-weight:700;letter-spacing:.04em;text-shadow:0 0 40px #5eead4}
+#lo .stat{position:absolute;left:50%;bottom:24px;transform:translateX(-50%);padding:8px 16px;border-radius:999px;border:1px solid #2a3550;background:rgba(10,13,22,.72);white-space:nowrap}
+#launchBtn{background:linear-gradient(135deg,#0f9d8a,#3b5bdb);border:0;color:#fff;font-weight:600}`;
+document.head.append(css);
+
+let seed = 11; const rnd = () => (seed = seed * 16807 % 2147483647) / 2147483647;
+function tex(w, h, fn) {
+  const c = document.createElement("canvas"); c.width = w; c.height = h; fn(c.getContext("2d"), w, h);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+const blob = (g, x, y, r) => { g.beginPath(); for (let k = 0; k < 10; k++) { const a = k / 10 * 6.283, q = r * (.6 + rnd() * .7); g.lineTo(x + Math.cos(a) * q * 1.6, y + Math.sin(a) * q); } g.fill(); };
+
+function launch() {
+  if (document.getElementById("lo")) return;
+  const s = (window.__cubesat || {}).spec || {};
+  const alt = +s.altitude_km || 550, units = +s.size_u || 6, sso = s.orbit === "SSO", years = +s.lifetime_years || 1;
+  const a = RE + alt, T = 2 * Math.PI * Math.sqrt(a ** 3 / MU), vel = Math.sqrt(MU / a), incDeg = sso ? 98 : 51.6;
+  const R = 6.371, ro = R + alt / 1000 * VIS, speedup = T / ORBIT_S;
+
+  const host = document.createElement("div"); host.id = "lo";
+  host.innerHTML = `<canvas></canvas><div class="hud"><div class="t">${units}U ${s.payload || "CubeSat"}</div>
+    <div>Altitude <b>${alt} km</b></div><div>Orbit <b>${sso ? "Sun-synchronous" : "Low Earth"} · ${incDeg}°</b></div>
+    <div>Period <b>${(T / 60).toFixed(1)} min</b></div><div>Speed <b>${vel.toFixed(2)} km/s</b></div>
+    <div>Orbits per day <b>${(86400 / T).toFixed(1)}</b></div><div>Orbits in ${years} yr <b>${Math.round(years * 365.25 * 86400 / T).toLocaleString()}</b></div>
+    <div>Mission time <b id="lmt">T-3</b></div><div>Lighting <b id="lli">–</b></div>
+    <div style="font-size:12px;color:#98a0aa;display:block">Altitude exaggerated ${VIS}× for visibility</div></div>
+    <div class="x"><button id="lrp">Replay</button><button id="lcl">Close</button></div><div class="big"></div><div class="stat"></div>`;
+  document.body.append(host);
+  const $ = q => host.querySelector(q), big = $(".big"), stat = $(".stat");
+
+  const renderer = new THREE.WebGLRenderer({ canvas: $("canvas"), antialias: true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 400);
+  camera.position.set(0, ro * 0.55, ro * 2.5);
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true; controls.enablePan = false; controls.minDistance = R * 1.6; controls.maxDistance = ro * 6;
+
+  const sunDir = new THREE.Vector3(1, 0.3, 0.5).normalize();
+  const sun = new THREE.DirectionalLight(0xffffff, 3); sun.position.copy(sunDir).multiplyScalar(60);
+  scene.add(sun, new THREE.AmbientLight(0x4466aa, 0.35));
+
+  const stars = new Float32Array(4500);
+  for (let i = 0; i < 1500; i++) { const v = new THREE.Vector3(rnd() - .5, rnd() - .5, rnd() - .5).normalize().multiplyScalar(150 + rnd() * 40); stars.set([v.x, v.y, v.z], i * 3); }
+  const sg = new THREE.BufferGeometry(); sg.setAttribute("position", new THREE.BufferAttribute(stars, 3));
+  scene.add(new THREE.Points(sg, new THREE.PointsMaterial({ size: 0.5, color: 0xcfd8ff, sizeAttenuation: false })));
+
+  const earthTex = tex(1024, 512, (g, w, h) => {
+    g.fillStyle = "#0b3a7a"; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 70; i++) { g.fillStyle = rnd() < .7 ? "#2f7d3f" : "#b39a62"; blob(g, rnd() * w, h * .15 + rnd() * h * .7, 20 + rnd() * 70); }
+    g.fillStyle = "#eef3f8"; g.fillRect(0, 0, w, h * .06); g.fillRect(0, h * .94, w, h * .06);
+  });
+  const cloudTex = tex(1024, 512, (g, w, h) => { g.clearRect(0, 0, w, h); g.fillStyle = "rgba(255,255,255,.55)"; for (let i = 0; i < 90; i++) blob(g, rnd() * w, rnd() * h, 10 + rnd() * 40); });
+  const earth = new THREE.Mesh(new THREE.SphereGeometry(R, 72, 48), new THREE.MeshStandardMaterial({ map: earthTex, roughness: .9 }));
+  const clouds = new THREE.Mesh(new THREE.SphereGeometry(R * 1.012, 72, 48), new THREE.MeshStandardMaterial({ map: cloudTex, transparent: true, depthWrite: false }));
+  const glow = new THREE.Mesh(new THREE.SphereGeometry(R * 1.14, 64, 48), new THREE.ShaderMaterial({
+    vertexShader: "varying vec3 n;void main(){n=normalize(normalMatrix*normal);gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}",
+    fragmentShader: "varying vec3 n;void main(){float i=pow(max(0.,.72-dot(n,vec3(0,0,1))),3.);gl_FragColor=vec4(.3,.6,1.,1.)*i*1.6;}",
+    side: THREE.BackSide, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false }));
+  scene.add(earth, clouds, glow);
+
+  const plane = new THREE.Group(); plane.rotation.x = THREE.MathUtils.degToRad(incDeg); scene.add(plane);
+  const ring = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(Array.from({ length: 256 }, (_, i) => new THREE.Vector3(Math.cos(i / 256 * 6.2832) * ro, 0, Math.sin(i / 256 * 6.2832) * ro))),
+    new THREE.LineBasicMaterial({ color: 0x5eead4, transparent: true, opacity: .35 }));
+  plane.add(ring);
+
+  const trail = color => {
+    const N = 500, arr = new Float32Array(N * 3), geo = new THREE.BufferGeometry(); let n = 0;
+    geo.setAttribute("position", new THREE.BufferAttribute(arr, 3)); geo.setDrawRange(0, 0);
+    const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color })); line.frustumCulled = false; plane.add(line);
+    return { line, clear() { n = 0; geo.setDrawRange(0, 0); },
+      push(v) { if (n === N) { arr.copyWithin(0, 3); n--; } arr.set([v.x, v.y, v.z], n++ * 3); geo.attributes.position.needsUpdate = true; geo.setDrawRange(0, n); } };
+  };
+  const ascentTrail = trail(0xffa24a), orbitTrail = trail(0x5eead4);
+
+  const rocket = new THREE.Group();
+  const part = (geo, mat, y) => { const m = new THREE.Mesh(geo, mat); m.position.y = y; rocket.add(m); return m; };
+  part(new THREE.CylinderGeometry(.035, .04, .22, 16), new THREE.MeshStandardMaterial({ color: 0xf2f4f8 }), 0);
+  part(new THREE.ConeGeometry(.035, .09, 16), new THREE.MeshStandardMaterial({ color: 0xd2493b }), .155);
+  const flame = part(new THREE.ConeGeometry(.032, .22, 12), new THREE.MeshBasicMaterial({ color: 0xffa040 }), -.21); flame.rotation.x = Math.PI;
+  rocket.scale.setScalar(2.2); plane.add(rocket);
+
+  const sat = new THREE.Group(), bs = .2 + .015 * units;
+  sat.add(new THREE.Mesh(new THREE.BoxGeometry(bs, bs * 1.5, bs), new THREE.MeshStandardMaterial({ color: 0xd9b25a, metalness: .8, roughness: .35 })));
+  const panelMat = new THREE.MeshStandardMaterial({ color: 0x1c2f70, metalness: .4, roughness: .3, emissive: 0x2a4aff, emissiveIntensity: .5 });
+  const panels = [-1, 1].map(d => {
+    const g = new THREE.Group(); g.position.x = d * bs / 2;
+    const m = new THREE.Mesh(new THREE.BoxGeometry(.7, .01, bs * 1.3), panelMat); m.position.x = d * .35; g.add(m); sat.add(g); return g;
+  });
+  const gl = tex(64, 64, (g, w) => { const r = g.createRadialGradient(32, 32, 0, 32, 32, 32); r.addColorStop(0, "rgba(94,234,212,.9)"); r.addColorStop(1, "rgba(94,234,212,0)"); g.fillStyle = r; g.fillRect(0, 0, w, w); });
+  const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: gl, blending: THREE.AdditiveBlending, depthWrite: false })); spr.scale.setScalar(1.3); sat.add(spr);
+  sat.scale.setScalar(1.4); plane.add(sat);
+
+  const th0 = Math.PI / 2 - 1.1;
+  const at = u => { const r = R + (ro - R) * (1 - (1 - u) ** 2.2), th = th0 + 1.1 * u * u; return new THREE.Vector3(Math.cos(th) * r, 0, Math.sin(th) * r); };
+  const Y = new THREE.Vector3(0, 1, 0), wp = new THREE.Vector3(), w = 2 * Math.PI / ORBIT_S;
+  let start = performance.now(), dead = false, raf = 0, last = start;
+
+  function replay() { start = performance.now(); ascentTrail.clear(); orbitTrail.clear(); }
+  function frame(now) {
+    if (dead) return; raf = requestAnimationFrame(frame);
+    const e = (now - start) / 1000, dt = Math.min(.05, (now - last) / 1000); last = now;
+    earth.rotation.y += dt * .02; clouds.rotation.y += dt * .027;
+    const inOrbit = e > L0 + ASCENT;
+    rocket.visible = !inOrbit; sat.visible = inOrbit;
+    big.textContent = e < 3 ? Math.ceil(3 - e) : e < 3.9 ? "LIFTOFF" : "";
+    if (!inOrbit) {
+      const u = Math.min(1, Math.max(0, (e - L0) / ASCENT)), p = at(u), u0 = Math.max(0, u - .003);
+      rocket.position.copy(p); rocket.quaternion.setFromUnitVectors(Y, at(u0 + .006).sub(at(u0)).normalize());
+      flame.scale.set(1, (e < L0 ? .35 : 1) * (.8 + .4 * Math.random()), 1);
+      if (u > 0) ascentTrail.push(p);
+      stat.textContent = e < L0 ? "Countdown" : `Ascent · ${Math.round(u * alt)} km`;
+      $("#lmt").textContent = e < L0 ? "T-" + Math.ceil(L0 - e) : "T+" + Math.round(e - L0) + " s";
+    } else {
+      const k = e - L0 - ASCENT, th = th0 + 1.1 + w * k;
+      sat.position.set(Math.cos(th) * ro, 0, Math.sin(th) * ro); sat.rotation.y = -th;
+      panels.forEach(p => p.scale.x = Math.min(1, k / 1.5)); orbitTrail.push(sat.position);
+      sat.getWorldPosition(wp);
+      const d = wp.dot(sunDir), dark = d < 0 && wp.clone().addScaledVector(sunDir, -d).length() < R;
+      panelMat.emissiveIntensity = dark ? .03 : .5;
+      stat.textContent = k < 1.5 ? "Deploying solar panels" : dark ? "In orbit · eclipse" : "In orbit · sunlit";
+      $("#lli").textContent = dark ? "Eclipse" : "Sunlit";
+      const sec = k * speedup, h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60);
+      $("#lmt").textContent = `T+${h} h ${m} min`;
+    }
+    controls.update(); renderer.render(scene, camera);
+  }
+  const resize = () => { renderer.setSize(host.clientWidth, host.clientHeight, false); camera.aspect = host.clientWidth / host.clientHeight; camera.updateProjectionMatrix(); };
+  const ro2 = new ResizeObserver(resize); ro2.observe(host); resize();
+  const close = () => { dead = true; cancelAnimationFrame(raf); ro2.disconnect(); renderer.dispose(); host.remove(); removeEventListener("keydown", key); };
+  const key = ev => { if (ev.key === "Escape") close(); };
+  addEventListener("keydown", key);
+  $("#lcl").onclick = close; $("#lrp").onclick = replay;
+  raf = requestAnimationFrame(frame);
+}
+
+const resetBtn = document.getElementById("resetBtn");
+if (resetBtn) {
+  const btn = document.createElement("button");
+  btn.id = "launchBtn"; btn.type = "button"; btn.textContent = "🚀 Launch";
+  const wrap = document.createElement("div"); wrap.style.cssText = "display:flex;gap:8px";
+  resetBtn.replaceWith(wrap); wrap.append(btn, resetBtn);
+  btn.addEventListener("click", launch);
 }
 </script>
 </body>
