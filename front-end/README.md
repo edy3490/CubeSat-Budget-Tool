@@ -13,6 +13,8 @@ Run `sat-parser/.venv/bin/python server.py` from the repo root and open http://l
 
 Errors come back as `{"detail": "..."}`. `budget` keeps the shape `render(b)` expects (`mass`, `maxMass`, `massRatio`, `massState`, `watts`, `powRatio`, `powState`, `cost`, `rows`, `notes`), filled from real parts by `designer/`. Extra fields: `gen`, `hardware`, `launch`, `costIsMinimum`, `unpriced`, and per row `part_index`, `gen_w`, `estimate` (`k` is null when a part has no public price).
 
+The page opens on a **landing page** (hero, prompt box, example chips). Sending an idea opens the workspace, and **New design** goes back to the landing page. Links with `?idea=...` skip the landing page.
+
 On top of the original layout the page adds a **3D model** (in place of the stack sketch) and a **build plan**:
 
 - The 3D model shows a quick rule-based layout first, then the model's drawing. It has explode/assemble, a spread slider, part labels and hover details, and hovering a table row highlights its part.

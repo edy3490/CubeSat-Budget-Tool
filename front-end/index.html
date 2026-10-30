@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>CubeSat Budget Tool</title>
 <script type="importmap">
 { "imports": {
@@ -11,13 +11,25 @@
 } }
 </script>
 <style>
-:root{--bg:#f4f5f7;--pane:#fff;--card:#eef0f3;--line:#d9dce2;--fg:#16181d;--muted:#626976;--user-bg:#dbe8ff;--user-fg:#0f3a85;--accent:#3b5bdb;--ok:#157a4f;--warn:#b06a00;--bad:#c2332b;--solar:#dbe5ff;--solar-line:#9fb4ee;--payload:#fbe9d2;--payload-line:#e2b982;--avi:#d8efe3;--avi-line:#8fc9aa;--batt:#dbe5ff;--batt-line:#9fb4ee;--view-top:#eef1f6;--view-bot:#d9dee8;--edge:#1b1f27;--sans:system-ui,-apple-system,"Segoe UI",sans-serif}
-@media (prefers-color-scheme:dark){:root{--bg:#101112;--pane:#161718;--card:#1d1f21;--line:#2c2f33;--fg:#eceef0;--muted:#98a0aa;--user-bg:#0a2147;--user-fg:#7fb0ff;--accent:#7fa2ff;--ok:#58d39a;--warn:#f5a524;--bad:#ff7a70;--solar:#0b2150;--solar-line:#1f3f86;--payload:#3a1f06;--payload-line:#6b4414;--avi:#0b3322;--avi-line:#1d6446;--batt:#0b2150;--batt-line:#1f3f86;--view-top:#1a1d24;--view-bot:#0c0d10;--edge:#e6ebf5;color-scheme:dark}}
+:root{--bg:#f4f5f7;--pane:#fff;--card:#eef0f3;--line:#d9dce2;--fg:#16181d;--muted:#626976;--user-bg:#dbe8ff;--user-fg:#0f3a85;--accent:#3b5bdb;--accent2:#0f9d8a;--ok:#157a4f;--warn:#b06a00;--bad:#c2332b;--solar:#dbe5ff;--solar-line:#9fb4ee;--payload:#fbe9d2;--payload-line:#e2b982;--avi:#d8efe3;--avi-line:#8fc9aa;--batt:#dbe5ff;--batt-line:#9fb4ee;--view-top:#eef1f6;--view-bot:#d9dee8;--edge:#1b1f27;--sans:system-ui,-apple-system,"Segoe UI",sans-serif;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0a0d16;--pane:#141a2b;--card:#1b2338;--line:#2a3550;--fg:#eceef0;--muted:#98a0aa;--user-bg:#0a2147;--user-fg:#7fb0ff;--accent:#7fa2ff;--accent2:#5eead4;--ok:#58d39a;--warn:#f5a524;--bad:#ff7a70;--solar:#0b2150;--solar-line:#1f3f86;--payload:#3a1f06;--payload-line:#6b4414;--avi:#0b3322;--avi-line:#1d6446;--batt:#0b2150;--batt-line:#1f3f86;--view-top:#18203a;--view-bot:#0a0d16;--edge:#e6ebf5;color-scheme:dark}}
 *{box-sizing:border-box}html,body{height:100%}
 body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 var(--sans);padding-inline:16px}
 .app{height:100%;max-width:1280px;margin:0 auto;display:flex;flex-direction:column;gap:12px;padding-block:14px}
+/* landing (Jason's homepage) */
+.land{min-height:100%;max-width:720px;margin:0 auto;display:flex;flex-direction:column;justify-content:center;padding-block:32px}
+.hero{text-align:center;margin-bottom:24px}
+.hero h1{font-size:clamp(28px,5vw,42px);margin:0 0 8px;letter-spacing:-.02em}
+.hero h1 span{background:linear-gradient(90deg,var(--accent2),var(--accent));-webkit-background-clip:text;background-clip:text;color:transparent}
+.hero p{margin:0;color:var(--muted);font-size:16px}
+.box{display:flex;gap:10px;align-items:center;background:var(--pane);border:1px solid var(--line);border-radius:20px;padding:10px 10px 10px 18px;box-shadow:0 10px 40px rgba(0,0,0,.15)}
+.box:focus-within{border-color:var(--accent)}
+.box input{flex:1;min-width:0;border:0;outline:0;background:transparent;color:var(--fg);font:inherit;font-size:16px;padding:8px 0}
+.box button{width:42px;height:42px;border-radius:12px;border:0;background:linear-gradient(135deg,var(--accent2),var(--accent));color:#071018;font-size:18px;padding:0}
+.note{text-align:center;font-size:12px;color:var(--muted);margin-top:24px}
+/* workspace */
 header{display:flex;justify-content:space-between;align-items:center}
-h1{font-size:15px;margin:0}
+h2{font-size:15px;margin:0}
 button{font:inherit;color:var(--fg);background:var(--card);border:1px solid var(--line);border-radius:8px;padding:6px 12px;cursor:pointer}
 button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
 .main{flex:1;min-height:0;display:grid;grid-template-columns:minmax(300px,420px) minmax(0,1fr);gap:14px}
@@ -29,8 +41,10 @@ button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
 .msg.ai{align-self:flex-start;border:1px solid var(--line)}
 .msg.err{align-self:flex-start;border:1px solid var(--bad);color:var(--bad)}
 .msg.typing{color:var(--muted)}
-.chips{display:flex;gap:6px;flex-wrap:wrap;padding:0 16px 10px}
-.chip{font-size:12.5px;padding:4px 10px;border-radius:999px;color:var(--muted)}
+.chips{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin-top:16px}
+.wchips{display:flex;gap:6px;flex-wrap:wrap;padding:0 16px 10px}
+.chip{font-size:13px;padding:6px 12px;border-radius:999px;color:var(--muted);background:transparent}
+.chip:hover{color:var(--fg);border-color:var(--accent)}
 .composer{display:flex;gap:8px;padding:12px;border-top:1px solid var(--line)}
 .composer input{flex:1;min-width:0;font:inherit;color:var(--fg);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
 .dash{overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:18px}
@@ -89,12 +103,24 @@ details ol{margin:6px 0 2px;padding-left:20px;font-size:13.5px;display:flex;flex
 </style>
 </head>
 <body>
-<div class="app">
-  <header><h1>CubeSat Budget Tool</h1><button id="resetBtn" type="button">New design</button></header>
+<section class="land" id="land">
+  <div class="hero">
+    <h1>Budget your <span>CubeSat</span> mission</h1>
+    <p>Describe a satellite. Get a mass, power and cost budget.</p>
+  </div>
+  <form class="box" id="landForm">
+    <input id="landInput" type="text" autocomplete="off" maxlength="2000" placeholder="e.g. A 6U CubeSat that images wildfires for 1 year" aria-label="Describe your satellite">
+    <button type="submit" aria-label="Start">➤</button>
+  </form>
+  <div class="chips" id="landChips"></div>
+  <div class="note">Early-design estimates only. Verify before flight.</div>
+</section>
+<div class="app" id="ws" hidden>
+  <header><h2>CubeSat Budget Tool</h2><button id="resetBtn" type="button">New design</button></header>
   <div class="main">
     <section class="pane chat" aria-label="Chat">
       <div class="log" id="log" aria-live="polite"></div>
-      <div class="chips" id="chips"></div>
+      <div class="wchips" id="chips"></div>
       <form class="composer" id="form">
         <input id="input" type="text" autocomplete="off" maxlength="2000" placeholder="Describe a satellite or change the design" aria-label="Message">
         <button class="primary" type="submit" id="sendBtn">Send</button>
@@ -727,16 +753,31 @@ async function reset(){
   loading.remove();
 }
 
-$("form").addEventListener("submit", e => { e.preventDefault(); send($("input").value); });
-$("resetBtn").addEventListener("click", reset);
-renderChips();
-await reset();
+/* ---------- landing -> workspace handoff (Jason's homepage) ---------- */
+async function enter(text){
+  text = text.trim(); if (!text) return;
+  $("land").hidden = true; $("ws").hidden = false;
+  await reset();
+  await send(text);
+}
+function leave(){ $("ws").hidden = true; $("land").hidden = false; $("landInput").value = ""; $("landInput").focus(); }
 
-// Links like ?idea=3U+camera&view=exploded open straight into a design.
+["A 6U CubeSat that images wildfires for 1 year", "12U with a methane spectrometer at 700 km", "3U radio relay at 500 km for 2 years"].forEach(s => {
+  const c = document.createElement("button"); c.type = "button"; c.className = "chip"; c.textContent = s;
+  c.addEventListener("click", () => enter(s)); $("landChips").appendChild(c);
+});
+$("landForm").addEventListener("submit", e => { e.preventDefault(); enter($("landInput").value); });
+$("form").addEventListener("submit", e => { e.preventDefault(); send($("input").value); });
+$("resetBtn").addEventListener("click", leave);
+renderChips();
+
+// Links like ?idea=3U+camera&view=exploded skip the landing page and open straight into a design.
 const params = new URLSearchParams(location.search);
 if (params.get("idea")) {
-  await send(params.get("idea"));
+  await enter(params.get("idea"));
   if (params.get("view") === "exploded" && viewer) { viewer.setExplode(1, false); $("explodeBtn").setAttribute("aria-pressed", true); $("explodeBtn").textContent = "Assemble"; $("explodeRange").value = 100; }
+} else {
+  $("landInput").focus();
 }
 </script>
 </body>
