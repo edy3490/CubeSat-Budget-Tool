@@ -153,7 +153,7 @@ sat-parser/.venv/bin/python -m pytest visualizer/tests   # offline: fake client 
 |---|---|
 | `library.py` | Looks up a part's drawing (Opus first, then generated) and saves new generated drawings |
 | `parts/opus/drawings.py` | The parts Opus drew |
-| `parts/generated/` | Parts Sonnet/Haiku drew at runtime, one JSON file each, for Opus to review |
+| `parts/generated/` | Parts Sonnet/Haiku drew at runtime, one JSON file each, for Opus to review (local, not in git) |
 | `placement.py` | Turning and moving library parts into place; exploded-view offsets |
 | `generator.py` | Prompt, schema, model choice, description and extras, edits, fallbacks, cache |
 | `budget.py` | The Sonnet token budget (hard cap, saved to `usage.json`) |

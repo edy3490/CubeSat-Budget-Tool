@@ -48,3 +48,6 @@ visualizer/usage.json
 visualizer/usage.tmp
 visualizer/scene_cache.json
 visualizer/scene_cache.tmp
+
+# Visualizer parts drawn by Sonnet/Haiku at runtime (local to each user)
+visualizer/parts/generated/*.json
