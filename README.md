@@ -1,6 +1,6 @@
 # CubeSat Generator
 
-Type a satellite idea and get a CubeSat: real parts, cost, SWaP, checks, a build plan and a 3D model you can explode.
+Type a satellite idea and get a CubeSat: real parts, cost, SWaP, checks, a build plan and a 3D model you can explore.
 
 ## Run it locally
 
