@@ -4,451 +4,192 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CubeSat Budget Tool</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-/* Layout: two panes. Chat on the left (fixed column), live budget on the right. Stacks under 900px. */
-:root{
-  --bg:#f4f5f7; --pane:#ffffff; --card:#eef0f3; --line:#d9dce2;
-  --fg:#16181d; --muted:#626976;
-  --user-bg:#dbe8ff; --user-fg:#0f3a85;
-  --accent:#3b5bdb;
-  --ok:#157a4f; --warn:#b06a00; --bad:#c2332b;
-  --solar:#dbe5ff; --solar-line:#9fb4ee;
-  --payload:#fbe9d2; --payload-line:#e2b982;
-  --avi:#d8efe3; --avi-line:#8fc9aa;
-  --batt:#dbe5ff; --batt-line:#9fb4ee;
-  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
-  --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
-}
-@media (prefers-color-scheme: dark){
-  :root:not([data-theme="light"]){
-    --bg:#101112; --pane:#161718; --card:#1d1f21; --line:#2c2f33;
-    --fg:#eceef0; --muted:#98a0aa;
-    --user-bg:#0a2147; --user-fg:#7fb0ff;
-    --accent:#7fa2ff;
-    --ok:#58d39a; --warn:#f5a524; --bad:#ff7a70;
-    --solar:#0b2150; --solar-line:#1f3f86;
-    --payload:#3a1f06; --payload-line:#6b4414;
-    --avi:#0b3322; --avi-line:#1d6446;
-    --batt:#0b2150; --batt-line:#1f3f86;
-    color-scheme:dark;
-  }
-}
-:root[data-theme="dark"]{
-  --bg:#101112; --pane:#161718; --card:#1d1f21; --line:#2c2f33;
-  --fg:#eceef0; --muted:#98a0aa;
-  --user-bg:#0a2147; --user-fg:#7fb0ff;
-  --accent:#7fa2ff;
-  --ok:#58d39a; --warn:#f5a524; --bad:#ff7a70;
-  --solar:#0b2150; --solar-line:#1f3f86;
-  --payload:#3a1f06; --payload-line:#6b4414;
-  --avi:#0b3322; --avi-line:#1d6446;
-  --batt:#0b2150; --batt-line:#1f3f86;
-  color-scheme:dark;
-}
-*{box-sizing:border-box}
-html,body{height:100%}
-body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 var(--sans);
-  padding-inline:max(16px,env(safe-area-inset-left,0px)) max(16px,env(safe-area-inset-right,0px));}
+:root{--bg:#f4f5f7;--pane:#fff;--card:#eef0f3;--line:#d9dce2;--fg:#16181d;--muted:#626976;--user-bg:#dbe8ff;--user-fg:#0f3a85;--accent:#3b5bdb;--ok:#157a4f;--warn:#b06a00;--bad:#c2332b;--solar:#dbe5ff;--solar-line:#9fb4ee;--payload:#fbe9d2;--payload-line:#e2b982;--avi:#d8efe3;--avi-line:#8fc9aa;--batt:#dbe5ff;--batt-line:#9fb4ee;--sans:system-ui,-apple-system,"Segoe UI",sans-serif}
+@media (prefers-color-scheme:dark){:root{--bg:#101112;--pane:#161718;--card:#1d1f21;--line:#2c2f33;--fg:#eceef0;--muted:#98a0aa;--user-bg:#0a2147;--user-fg:#7fb0ff;--accent:#7fa2ff;--ok:#58d39a;--warn:#f5a524;--bad:#ff7a70;--solar:#0b2150;--solar-line:#1f3f86;--payload:#3a1f06;--payload-line:#6b4414;--avi:#0b3322;--avi-line:#1d6446;--batt:#0b2150;--batt-line:#1f3f86;color-scheme:dark}}
+*{box-sizing:border-box}html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 var(--sans);padding-inline:16px}
 .app{height:100%;max-width:1280px;margin:0 auto;display:flex;flex-direction:column;gap:12px;padding-block:14px}
-header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
-h1{font-size:15px;font-weight:600;margin:0;letter-spacing:.01em}
-h1 small{font-family:var(--mono);font-weight:400;color:var(--muted);margin-left:8px;font-size:12px}
-.tools{display:flex;gap:8px}
+header{display:flex;justify-content:space-between;align-items:center}
+h1{font-size:15px;margin:0}
 button{font:inherit;color:var(--fg);background:var(--card);border:1px solid var(--line);border-radius:8px;padding:6px 12px;cursor:pointer}
-button:hover{border-color:var(--accent)}
-button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
-:root:not([data-theme="light"]) button.primary{color:#0b1020}
 .main{flex:1;min-height:0;display:grid;grid-template-columns:minmax(300px,420px) minmax(0,1fr);gap:14px}
 .pane{background:var(--pane);border:1px solid var(--line);border-radius:14px;min-height:0;min-width:0}
-
-/* chat */
 .chat{display:flex;flex-direction:column}
 .log{flex:1;min-height:0;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:10px}
 .msg{max-width:92%;padding:10px 14px;border-radius:12px;white-space:pre-wrap;overflow-wrap:anywhere}
 .msg.user{align-self:flex-end;background:var(--user-bg);color:var(--user-fg)}
 .msg.ai{align-self:flex-start;border:1px solid var(--line)}
 .msg.err{align-self:flex-start;border:1px solid var(--bad);color:var(--bad)}
-.msg.typing{color:var(--muted);font-family:var(--mono);font-size:13px}
-.composer{display:flex;gap:8px;padding:12px;border-top:1px solid var(--line)}
-.composer input{flex:1;min-width:0;font:inherit;color:var(--fg);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.msg.typing{color:var(--muted)}
 .chips{display:flex;gap:6px;flex-wrap:wrap;padding:0 16px 10px}
 .chip{font-size:12.5px;padding:4px 10px;border-radius:999px;color:var(--muted)}
-
-/* dashboard */
+.composer{display:flex;gap:8px;padding:12px;border-top:1px solid var(--line)}
+.composer input{flex:1;min-width:0;font:inherit;color:var(--fg);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
 .dash{overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:18px}
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
-.stat{background:var(--card);border-radius:10px;padding:12px 14px;min-width:0}
-.stat .k{color:var(--muted);font-size:13px}
-.stat .v{font-size:28px;font-weight:500;line-height:1.2;font-variant-numeric:tabular-nums}
-.stat .s{font-size:13.5px;color:var(--muted)}
-.stat .s.ok{color:var(--ok)} .stat .s.tight{color:var(--warn)} .stat .s.over{color:var(--bad)}
+.stat{background:var(--card);border-radius:10px;padding:12px 14px}
+.k{color:var(--muted);font-size:13px}.v{font-size:28px;font-weight:500}.s{font-size:13.5px;color:var(--muted)}
+.s.ok{color:var(--ok)}.s.tight{color:var(--warn)}.s.over{color:var(--bad)}
 .meter{height:4px;border-radius:2px;background:var(--line);margin-top:8px;overflow:hidden}
 .meter i{display:block;height:100%;background:var(--accent);width:0;transition:width .35s}
-.meter.tight i{background:var(--warn)} .meter.over i{background:var(--bad)}
-.tablewrap{overflow-x:auto}
-table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
-th,td{padding:7px 0;text-align:right;white-space:nowrap}
-th:first-child,td:first-child{text-align:left;padding-right:16px}
-th{font-weight:400;color:var(--muted)}
-td{border-top:1px solid transparent}
-tbody tr+tr td{border-top-color:var(--line)}
-td.name small{display:block;color:var(--muted);font-size:12px}
-tfoot td{border-top:1px solid var(--fg);font-weight:600}
-td,th{padding-left:14px}
+.meter.tight i{background:var(--warn)}.meter.over i{background:var(--bad)}
+.tablewrap{overflow-x:auto}table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+th,td{padding:7px 0 7px 14px;text-align:right;white-space:nowrap}th:first-child,td:first-child{text-align:left;padding-left:0}
+th{font-weight:400;color:var(--muted)}tbody tr+tr td{border-top:1px solid var(--line)}
+td small{display:block;color:var(--muted);font-size:12px}tfoot td{border-top:1px solid var(--fg);font-weight:600}
 .notes{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px;font-size:13.5px}
-.notes li{display:flex;gap:8px}
-.notes li::before{content:"";width:6px;height:6px;border-radius:50%;margin-top:7px;flex:none;background:var(--muted)}
-.notes li.warn::before{background:var(--warn)} .notes li.bad::before{background:var(--bad)} .notes li.good::before{background:var(--ok)}
-.sketchrow{display:flex;justify-content:center}
-svg text{font-family:var(--sans);font-size:12.5px;fill:var(--fg)}
+.notes li{display:flex;gap:8px}.notes li::before{content:"";width:6px;height:6px;border-radius:50%;margin-top:7px;flex:none;background:var(--muted)}
+.notes li.warn::before{background:var(--warn)}.notes li.bad::before{background:var(--bad)}.notes li.good::before{background:var(--ok)}
+.sketchrow{display:flex;justify-content:center}svg text{font:12.5px var(--sans);fill:var(--fg)}
 .label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin:0 0 8px}
-
-/* settings */
-.settings{position:fixed;inset:0;background:rgba(0,0,0,.5);display:grid;place-items:center;padding:16px;z-index:5}
-.settings[hidden]{display:none}
-.card{background:var(--pane);border:1px solid var(--line);border-radius:14px;padding:18px;width:min(520px,100%);display:flex;flex-direction:column;gap:12px;max-height:100%;overflow:auto}
-.card label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}
-.card input[type=text],.card input[type=password]{font:var(--mono);font-size:13px;color:var(--fg);background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
-.card pre{margin:0;background:var(--card);border-radius:8px;padding:10px;font:12px/1.5 var(--mono);overflow-x:auto;color:var(--muted)}
-.row{display:flex;gap:8px;justify-content:flex-end}
-
-@media (max-width:900px){
-  html,body{height:auto}
-  .app{height:auto}
-  .main{grid-template-columns:minmax(0,1fr)}
-  .chat{height:70vh}
-  .dash{overflow:visible}
-}
-
-@media (prefers-reduced-motion:reduce){.meter i{transition:none}}
+@media (max-width:900px){html,body,.app{height:auto}.main{grid-template-columns:minmax(0,1fr)}.chat{height:70vh}.dash{overflow:visible}}
 </style>
 </head>
 <body>
 <div class="app">
-  <header>
-    <h1>CubeSat Budget Tool<small id="modeLabel">demo mode</small></h1>
-    <div class="tools">
-      <button id="resetBtn" type="button">New design</button>
-      <button id="settingsBtn" type="button">Model settings</button>
-    </div>
-  </header>
-
+  <header><h1>CubeSat Budget Tool</h1><button id="resetBtn" type="button">New design</button></header>
   <div class="main">
     <section class="pane chat" aria-label="Chat">
       <div class="log" id="log" aria-live="polite"></div>
       <div class="chips" id="chips"></div>
       <form class="composer" id="form">
-        <input id="input" type="text" autocomplete="off" placeholder="Add a payload or change the orbit" aria-label="Message">
+        <input id="input" type="text" autocomplete="off" placeholder="Describe a satellite or change the design" aria-label="Message">
         <button class="primary" type="submit" id="sendBtn">Send</button>
       </form>
     </section>
-
     <section class="pane dash" aria-label="Budget">
       <div class="stats">
         <div class="stat"><div class="k">Mass</div><div class="v" id="massV">-</div><div class="s" id="massS"></div><div class="meter" id="massM"><i></i></div></div>
         <div class="stat"><div class="k">Power (peak draw)</div><div class="v" id="powV">-</div><div class="s" id="powS"></div><div class="meter" id="powM"><i></i></div></div>
-        <div class="stat"><div class="k">Parts cost</div><div class="v" id="costV">-</div><div class="s" id="costS"></div></div>
+        <div class="stat"><div class="k">Mission cost</div><div class="v" id="costV">-</div><div class="s" id="costS"></div></div>
       </div>
-
-      <div>
-        <p class="label">Subsystems</p>
-        <div class="tablewrap">
-          <table>
-            <thead><tr><th>Subsystem</th><th>kg</th><th>W</th><th>$k</th></tr></thead>
-            <tbody id="rows"></tbody>
-            <tfoot><tr><td>Total</td><td id="tMass"></td><td id="tPow"></td><td id="tCost"></td></tr></tfoot>
-          </table>
-        </div>
-      </div>
-
-      <div>
-        <p class="label">Flags</p>
-        <ul class="notes" id="notes"></ul>
-      </div>
-
-      <div>
-        <p class="label">Stack sketch</p>
-        <div class="sketchrow"><svg id="sketch" width="360" height="300" viewBox="0 0 360 300" role="img" aria-label="Simple stack sketch of the satellite"></svg></div>
-      </div>
+      <div><p class="label">Subsystems</p><div class="tablewrap"><table>
+        <thead><tr><th>Subsystem</th><th>kg</th><th>W</th><th>$k</th></tr></thead>
+        <tbody id="rows"></tbody>
+        <tfoot><tr><td>Total</td><td id="tMass"></td><td id="tPow"></td><td id="tCost"></td></tr></tfoot>
+      </table></div></div>
+      <div><p class="label">Flags</p><ul class="notes" id="notes"></ul></div>
+      <div><p class="label">Stack sketch</p><div class="sketchrow"><svg id="sketch" width="360" height="300" viewBox="0 0 360 300" role="img" aria-label="Stack sketch"></svg></div></div>
     </section>
   </div>
 </div>
-
-<div class="settings" id="settings" hidden>
-  <div class="card" role="dialog" aria-modal="true" aria-labelledby="sTitle">
-    <h2 id="sTitle" style="margin:0;font-size:16px">Model settings</h2>
-    <label>Model endpoint URL (leave empty for demo mode)
-      <input type="text" id="endpoint" placeholder="https://your-host.example.com/api/cubesat-chat">
-    </label>
-    <label>Authorization header value (optional)
-      <input type="password" id="authKey" placeholder="Bearer sk-...">
-    </label>
-    <div>
-      <p class="label" style="margin-bottom:6px">Request your endpoint receives (POST, JSON)</p>
-      <pre>{ "messages": [{"role":"user","content":"..."}],
-  "spec": { ...current design spec... } }</pre>
-    </div>
-    <div>
-      <p class="label" style="margin-bottom:6px">Response it should return</p>
-      <pre>{ "reply": "text shown in chat",
-  "spec": { "form":"6U", "payload":"camera",
-            "altitude_km":500, "years":1 } }</pre>
-    </div>
-    <div class="row">
-      <button type="button" id="cancelS">Cancel</button>
-      <button type="button" class="primary" id="saveS">Save</button>
-    </div>
-  </div>
-</div>
-
 <script>
 (() => {
 "use strict";
-
-/* ---------- Parts table (replace with your SOA data) ---------- */
-const FORMS = {
-  /*1u-2u can be replaced data not accurate
-  "1U" : { u:1,  maxMass:2,  gen:6,  structure:[0.6,0,25],  power:[1.1,0,80]  },
-  "1.5U" : { u:1.5,  maxMass:3,  gen:6,  structure:[0.6,0,25],  power:[1.1,0,80]  },
-  "2U" : { u:2,  maxMass:4,  gen:6,  structure:[0.6,0,25],  power:[1.1,0,80]  },
-  */
-  "3U":  { u:3,  maxMass:4,  gen:6,  structure:[0.6,0,25],  power:[1.1,0,80]  },
-  "6U":  { u:6,  maxMass:12, gen:14, structure:[1.2,0,40],  power:[2.1,0,120] },
-  "12U": { u:12, maxMass:24, gen:30, structure:[2.4,0,70],  power:[3.8,0,190] }
-};
-const PAYLOADS = {
-  camera:       { name:"Camera payload",       note:"Wildfire-class imager", mass:1.5, w:8,  cost:150, adcs:[0.8,2,90]  },
-  spectrometer: { name:"Spectrometer payload", note:"Multispectral / gas",   mass:1.8, w:10, cost:220, adcs:[0.9,3,110] },
-  iot:          { name:"IoT relay payload",    note:"Store-and-forward",     mass:0.6, w:3,  cost:70,  adcs:[0.5,1,40]  }
-};
-const RADIO = [0.5,4,60];
-const OBC   = [0.3,1,20];
-
-/* ---------- Budget engine (plain math, no AI) ---------- */
-function computeBudget(spec){
-  const f = FORMS[spec.form] || FORMS["6U"];
-  const p = PAYLOADS[spec.payload] || PAYLOADS.camera;
-  const years = Math.max(1, +spec.years || 1);
-  const alt = +spec.altitude_km || 500;
-  const harsh = years > 2 || alt > 800;
-
-  const struct = [f.structure[0] + (harsh ? 0.3 : 0), 0, f.structure[2] + (harsh ? 15 : 0)];
-  const power  = [f.power[0] + 0.1*(years-1), 0, f.power[2] + 15*(years-1)];
-  const rows = [
-    { name:p.name,            note:p.note, kg:p.mass,  w:p.w,  k:p.cost },
-    { name:"Structure",       note:harsh?"With radiation shielding":"", kg:struct[0], w:struct[1], k:struct[2] },
-    { name:"Power system",    note:years>1?"Battery sized for "+years+" years":"", kg:power[0], w:power[1], k:power[2] },
-    { name:"Pointing (ADCS)", note:"", kg:p.adcs[0], w:p.adcs[1], k:p.adcs[2] },
-    { name:"Radio",           note:"", kg:RADIO[0], w:RADIO[1], k:RADIO[2] },
-    { name:"Flight computer", note:"", kg:OBC[0],   w:OBC[1],   k:OBC[2] }
-  ];
-  const sum = key => rows.reduce((a,r)=>a+r[key],0);
-  const mass = sum("kg"), watts = sum("w"), cost = sum("k");
-  const powRatio = watts / f.gen, massRatio = mass / f.maxMass;
-  const powState = powRatio > 1 ? "over" : powRatio > 0.7 ? "tight" : "ok";
-  const massState = massRatio > 1 ? "over" : massRatio > 0.85 ? "tight" : "ok";
-
-  const notes = [];
-  if (massState==="over") notes.push(["bad", `Mass is ${(mass-f.maxMass).toFixed(1)} kg over the ${spec.form} limit. Move to a larger form factor or drop payload mass.`]);
-  else if (massState==="tight") notes.push(["warn", `Mass is ${Math.round(massRatio*100)}% of the ${spec.form} limit.`]);
-  else notes.push(["good", `Mass fits with ${(f.maxMass-mass).toFixed(1)} kg to spare.`]);
-  if (powState==="over") notes.push(["bad", `Peak draw of ${watts} W exceeds the ${f.gen} W orbit-average generation. Payload and radio cannot run together.`]);
-  else if (powState==="tight") notes.push(["warn", `Peak draw is ${Math.round(powRatio*100)}% of the ${f.gen} W generation. Camera and radio cannot run together on battery alone.`]);
-  else notes.push(["good", `Power has margin: ${watts} W peak against ${f.gen} W generation.`]);
-  if (harsh) notes.push(["warn", alt>800 ? `${alt} km sits in a higher radiation environment; shielding added.` : `A ${years}-year life adds shielding and battery cycling margin.`]);
-  if (alt < 450) notes.push(["warn", `At ${alt} km drag is significant. Check the orbit lifetime against a ${years}-year mission.`]);
-
-  return { form:spec.form, maxMass:f.maxMass, gen:f.gen, rows, mass, watts, cost, powRatio, massRatio, powState, massState, notes, spec };
-}
-
-/* ---------- Demo-mode parser (used when no endpoint is set) ---------- */
-function demoParse(text, prev){
-  const s = Object.assign({}, prev);
-  const t = text.toLowerCase();
-  const form = t.match(/\b(3|6|12)\s*u\b/);
-  if (form) s.form = form[1].toUpperCase()+"U";
-  if (/spectro|methane|gas|multispectral|hyperspectral/.test(t)) s.payload = "spectrometer";
-  else if (/iot|sensor network|relay/.test(t)) s.payload = "iot";
-  else if (/wildfire|imag|camera|earth observation|photo/.test(t)) s.payload = "camera";
-  const alt = t.match(/(\d{3,4})\s*km/);
-  if (alt) s.altitude_km = +alt[1];
-  else if (/low earth|leo/.test(t) && !prev.altitude_km) s.altitude_km = 500;
-  const yrs = t.match(/(\d+(?:\.\d+)?)\s*(?:year|yr)/);
-  if (yrs) s.years = +yrs[1];
-  return s;
-}
-
-function demoReply(b){
-  const lines = [];
-  lines.push(b.massState==="ok" ? "Here is a starting design. Mass fits with room to spare." : b.massState==="tight" ? "Here is a starting design. Mass is close to the limit." : "This design is over the mass limit.");
-  lines.push(b.powState==="ok" ? "Power has margin." : b.powState==="tight" ? "Power is the tight spot: the payload and radio can't run together on battery alone." : "Power is over budget at peak draw.");
-  return lines.join(" ") + "\n\n(Demo mode: connect your model in Model settings.)";
-}
-
-/* ---------- State ---------- */
-const DEFAULT_SPEC = { form:"6U", payload:"camera", altitude_km:500, years:1 };
-let spec = Object.assign({}, DEFAULT_SPEC);
-let history = [];
-let busy = false;
-
 const $ = id => document.getElementById(id);
 const log = $("log");
-
-function store(key, val){ try{ if(val===undefined) return localStorage.getItem(key)||""; localStorage.setItem(key,val); }catch(e){ return ""; } }
-
-/* ---------- Render ---------- */
+let spec = {}, history = [], busy = false;   // spec is opaque: the server owns its shape
 const fmt = n => (Math.round(n*10)/10).toString();
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+async function post(url, body){
+  const res = await fetch(url, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)});
+  if (!res.ok){
+    let d = ""; try{ d = (await res.json()).detail || ""; }catch(e){}
+    throw new Error("Server returned " + res.status + (d ? ": " + (typeof d === "string" ? d : JSON.stringify(d)) : ""));
+  }
+  return res.json();
+}
+
+function setMeter(id, ratio, state){
+  const m = $(id);
+  m.className = "meter " + (state === "ok" ? "" : state);
+  m.firstElementChild.style.width = Math.min(100, Math.round(ratio*100)) + "%";
+}
+
 function render(b){
-  $("massV").textContent = fmt(b.mass)+" kg";
-  $("massS").textContent = "of "+b.maxMass+" max";
-  $("powV").textContent = fmt(b.watts)+" W";
+  $("massV").textContent = fmt(b.mass) + " kg";
+  $("massS").textContent = "of " + b.maxMass + " max";
+  $("powV").textContent = fmt(b.watts) + " W";
   const ps = $("powS");
-  ps.textContent = b.powState==="ok" ? "margin ok" : b.powState==="tight" ? "tight" : "over budget";
-  ps.className = "s "+b.powState;
-  $("costV").textContent = "~$"+Math.round(b.cost)+"k";
-  $("costS").textContent = "rough range";
+  ps.textContent = b.powState === "ok" ? "margin ok" : b.powState === "tight" ? "tight" : "over budget";
+  ps.className = "s " + b.powState;
+  $("costV").textContent = "~$" + Math.round(b.cost) + "k";
+  $("costS").textContent = "hardware + launch";
   setMeter("massM", b.massRatio, b.massState);
   setMeter("powM", b.powRatio, b.powState);
-
   $("rows").innerHTML = b.rows.map(r =>
-    `<tr><td class="name">${esc(r.name)}${r.note?`<small>${esc(r.note)}</small>`:""}</td><td>${fmt(r.kg)}</td><td>${fmt(r.w)}</td><td>${Math.round(r.k)}</td></tr>`).join("");
+    `<tr><td>${esc(r.name)}${r.note ? `<small>${esc(r.note)}</small>` : ""}</td><td>${fmt(r.kg)}</td><td>${fmt(r.w)}</td><td>${Math.round(r.k)}</td></tr>`).join("");
   $("tMass").textContent = fmt(b.mass);
   $("tPow").textContent = fmt(b.watts);
   $("tCost").textContent = Math.round(b.cost);
-
-  $("notes").innerHTML = b.notes.map(n=>`<li class="${n[0]}">${esc(n[1])}</li>`).join("");
+  $("notes").innerHTML = b.notes.map(n => `<li class="${n[0]}">${esc(n[1])}</li>`).join("");
   drawSketch(b);
 }
-function setMeter(id, ratio, state){
-  const m = $(id);
-  m.className = "meter "+(state==="ok"?"":state);
-  m.firstElementChild.style.width = Math.min(100, Math.round(ratio*100))+"%";
-}
-function esc(s){ return String(s).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 
 function drawSketch(b){
-  const units = FORMS[b.form].u;
-  const cx = 180, bodyW = 140;
-  const unitH = Math.min(36, 240/units);   // body grows with form factor
-  const H = Math.max(3, units) * unitH;
-  const top = (300 - H)/2;
-  const payloadH = H*0.34, aviH = H*0.30, battH = H - payloadH - aviH;
-  const label = (PAYLOADS[b.spec.payload]||PAYLOADS.camera).name.replace(" payload","");
-  const panelW = 56, panelH = H*0.66, py = top + H*0.17;
-  const box = (x,y,w,h,fill,stroke,txt) =>
-    `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3" fill="var(--${fill})" stroke="var(--${stroke})"/>`+
-    `<text x="${x+w/2}" y="${y+h/2+4}" text-anchor="middle">${txt}</text>`;
+  const units = b.units, cx = 180, bodyW = 140;
+  const unitH = Math.min(36, 240/units), H = Math.max(3, units)*unitH, top = (300-H)/2;
+  const pH = H*.34, aH = H*.30, bH = H-pH-aH, panelW = 56, panelH = H*.66, py = top+H*.17;
+  const box = (x,y,w,h,f,s,t) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3" fill="var(--${f})" stroke="var(--${s})"/><text x="${x+w/2}" y="${y+h/2+4}" text-anchor="middle">${t}</text>`;
   $("sketch").innerHTML =
-    `<text x="${cx}" y="${Math.max(14, top-8)}" text-anchor="middle" style="fill:var(--muted)">${b.form} · ${b.spec.altitude_km} km · ${b.spec.years} yr</text>`+
-    box(cx-bodyW/2-panelW-6, py, panelW, panelH, "solar","solar-line","Solar")+
-    box(cx+bodyW/2+6,        py, panelW, panelH, "solar","solar-line","Solar")+
-    box(cx-bodyW/2, top, bodyW, payloadH, "payload","payload-line", esc(label))+
-    box(cx-bodyW/2, top+payloadH, bodyW, aviH, "avi","avi-line","Avionics + radio")+
-    box(cx-bodyW/2, top+payloadH+aviH, bodyW, battH, "batt","batt-line","Battery");
+    `<text x="${cx}" y="${Math.max(14, top-8)}" text-anchor="middle" style="fill:var(--muted)">${esc(b.form)} · ${esc(b.altitude)} km · ${esc(b.years)} yr</text>` +
+    box(cx-bodyW/2-panelW-6, py, panelW, panelH, "solar", "solar-line", "Solar") +
+    box(cx+bodyW/2+6, py, panelW, panelH, "solar", "solar-line", "Solar") +
+    box(cx-bodyW/2, top, bodyW, pH, "payload", "payload-line", esc(b.label)) +
+    box(cx-bodyW/2, top+pH, bodyW, aH, "avi", "avi-line", "Avionics + radio") +
+    box(cx-bodyW/2, top+pH+aH, bodyW, bH, "batt", "batt-line", "Battery");
 }
 
-/* ---------- Chat ---------- */
 function addMsg(kind, text){
   const d = document.createElement("div");
-  d.className = "msg "+kind;
-  d.textContent = text;
-  log.appendChild(d);
-  log.scrollTop = log.scrollHeight;
+  d.className = "msg " + kind; d.textContent = text;
+  log.appendChild(d); log.scrollTop = log.scrollHeight;
   return d;
 }
 
-const SUGGESTIONS = ["Make it a 12U", "Raise the orbit to 700 km", "Add a methane spectrometer", "Extend to 3 years"];
 function renderChips(){
-  $("chips").innerHTML = "";
-  SUGGESTIONS.forEach(s=>{
+  ["Make it a 12U", "Raise the orbit to 700 km", "Add a methane spectrometer", "Extend to 3 years"].forEach(s => {
     const c = document.createElement("button");
-    c.type="button"; c.className="chip"; c.textContent=s;
-    c.addEventListener("click",()=>send(s));
+    c.type = "button"; c.className = "chip"; c.textContent = s;
+    c.addEventListener("click", () => send(s));
     $("chips").appendChild(c);
   });
 }
 
-async function callModel(){
-  const endpoint = store("cs_endpoint");
-  if (!endpoint) return null;
-  const headers = { "Content-Type":"application/json" };
-  const key = store("cs_auth");
-  if (key) headers["Authorization"] = key;
-  const res = await fetch(endpoint, { method:"POST", headers, body: JSON.stringify({ messages: history, spec }) });
-  if (!res.ok) throw new Error("Model endpoint returned "+res.status);
-  const data = await res.json();
-  let newSpec = data.spec;
-  if (!newSpec && typeof data.reply === "string"){          // fallback: JSON block inside the reply
-    const m = data.reply.match(/```json\s*([\s\S]*?)```/);
-    if (m) { try{ newSpec = JSON.parse(m[1]); }catch(e){} }
-  }
-  return { reply: (data.reply||"").replace(/```json[\s\S]*?```/g,"").trim(), spec:newSpec };
+function showError(err){
+  const hint = /Failed to fetch|NetworkError/.test(err.message) ? " Is the API running, and is this page served from it?" : "";
+  addMsg("err", err.message + "." + hint);
 }
 
 async function send(text){
-  text = (text||"").trim();
+  text = (text || "").trim();
   if (!text || busy) return;
   busy = true; $("sendBtn").disabled = true;
   addMsg("user", text);
-  history.push({ role:"user", content:text });
+  history.push({role:"user", content:text});
   $("input").value = "";
   const typing = addMsg("ai typing", "Working on it...");
   try{
-    const out = await callModel();
-    let reply;
-    if (out){
-      if (out.spec) spec = Object.assign({}, spec, out.spec);
-      reply = out.reply || "Updated the design.";
-      var b = computeBudget(spec);
-    } else {
-      spec = demoParse(text, spec);
-      var b = computeBudget(spec);
-      reply = demoReply(b);
-    }
+    const out = await post("/api/cubesat-chat", {messages:history, spec});
     typing.remove();
-    addMsg("ai", reply);
-    history.push({ role:"assistant", content:reply });
-    render(b);
+    addMsg("ai", out.reply || "Updated the design.");
+    history.push({role:"assistant", content:out.reply || ""});
+    if (out.spec) spec = out.spec;
+    if (out.budget) render(out.budget);
   }catch(err){
-    typing.remove();
-    const hint = /Failed to fetch|NetworkError/.test(err.message) ? " Check the URL and that your server allows requests from this page (CORS)." : "";
-    addMsg("err", err.message+"."+hint);
-    history.pop();
+    typing.remove(); showError(err); history.pop();
   }
   busy = false; $("sendBtn").disabled = false; $("input").focus();
 }
 
-function reset(){
-  spec = Object.assign({}, DEFAULT_SPEC);
-  history = [];
-  log.innerHTML = "";
+async function reset(){
+  spec = {}; history = []; log.innerHTML = "";
   addMsg("ai", "Describe the mission and I'll build a mass, power and cost budget. For example: a 6U CubeSat that images wildfires from low Earth orbit for 1 year.");
-  render(computeBudget(spec));
+  const loading = addMsg("ai typing", "Loading starter design...");
+  try{
+    const out = await post("/api/budget", {});
+    spec = out.spec || {};
+    render(out.budget);
+  }catch(err){ showError(err); }
+  loading.remove();
 }
 
-function updateModeLabel(){ $("modeLabel").textContent = store("cs_endpoint") ? "connected" : "demo mode"; }
-
-/* ---------- Wiring ---------- */
-$("form").addEventListener("submit", e=>{ e.preventDefault(); send($("input").value); });
+$("form").addEventListener("submit", e => { e.preventDefault(); send($("input").value); });
 $("resetBtn").addEventListener("click", reset);
-$("settingsBtn").addEventListener("click", ()=>{
-  $("endpoint").value = store("cs_endpoint");
-  $("authKey").value = store("cs_auth");
-  $("settings").hidden = false; $("endpoint").focus();
-});
-$("cancelS").addEventListener("click", ()=>{ $("settings").hidden = true; });
-$("saveS").addEventListener("click", ()=>{
-  store("cs_endpoint", $("endpoint").value.trim());
-  store("cs_auth", $("authKey").value.trim());
-  $("settings").hidden = true; updateModeLabel();
-});
-document.addEventListener("keydown", e=>{ if(e.key==="Escape") $("settings").hidden = true; });
-
-renderChips(); updateModeLabel(); reset();
+renderChips(); reset();
 })();
 </script>
 </body>
