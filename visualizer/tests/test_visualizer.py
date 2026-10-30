@@ -2,6 +2,7 @@
 
 Run from the repo root:  python -m pytest visualizer/tests
 """
+import copy
 import json
 import math
 import tempfile
@@ -204,15 +205,23 @@ class InsideTheFrameTest(Base):
         self.assert_all_inside_and_apart(s, self.six)
         self.assertEqual({p["ref"]: json.dumps(p["shapes"]) for p in s["parts"] if p is not board}, others)
 
-    def test_one_tall_stack_in_a_6u_is_split_into_columns(self):
+    MODEL_TEXT = {"overview": "how it works", "layout": "Everything is in one stack in the middle and it fits."}
+
+    def one_tall_stack(self):
         # What Sonnet did: every board in one column down the middle, running out of the top.
         s = default_scene(self.six)
+        s["description"] = dict(self.MODEL_TEXT)
+        s["fit"], s["summary"] = {"verdict": "fits", "note": "uses 340 of 366 mm"}, "one stack"
         z = -envelope(self.six)[2] / 2 - 1
         for p in sorted(self.inside(s, self.six), key=lambda p: bbox(p["shapes"])[0][2]):
             lo, hi = bbox(p["shapes"])
             w = [(hi[k] - lo[k]) / 2 for k in range(2)]
             sc._move_to(p, (lo, hi), ([-w[0], -w[1], z], [w[0], w[1], z + hi[2] - lo[2]]))
             z += hi[2] - lo[2] + 1
+        return s
+
+    def test_one_tall_stack_in_a_6u_is_split_into_columns(self):
+        s = self.one_tall_stack()
         shared = self.inside(s, self.six)[0]["shapes"]                  # as if carried over from an earlier scene
         notes = sc.fix_inside(s, self.six)
         self.assertTrue(notes[0].startswith("Re-stacked the inside parts in columns"))
@@ -220,6 +229,38 @@ class InsideTheFrameTest(Base):
         self.assertIsNot(self.inside(s, self.six)[0]["shapes"], shared)  # new shapes, the old ones untouched
         cam = next(p for p in self.inside(s, self.six) if sc.kind_of(self.six["parts"][p["part_index"]]) == "imager")
         self.assertLess(bbox(cam["shapes"])[0][2], -envelope(self.six)[2] / 2)   # lens still out the bottom
+
+    def test_after_a_re_stack_the_layout_text_matches_the_drawing(self):
+        s = self.one_tall_stack()
+        sc.fix_inside(s, self.six)
+        text = s["description"]["layout"]
+        self.assertNotIn("one stack in the middle", text)                   # the model's words are gone
+        self.assertIn("split into 2 side-by-side stacks", text)
+        for p in self.inside(s, self.six):
+            self.assertIn(p["label"], text)                                 # every inside part is placed in words
+        self.assertIn("set by the app, not the model", text)
+        self.assertEqual(s["description"]["overview"], "how it works")      # what it does is still true
+        self.assertEqual(s["fit"]["verdict"], "fits")
+        self.assertNotIn("340", s["fit"]["note"])
+        self.assertIn("2 side-by-side stacks", s["summary"])
+
+    def test_a_nudge_keeps_the_models_text(self):
+        s = default_scene(self.six)
+        s["description"] = dict(self.MODEL_TEXT)
+        lower, upper = self.column_pair(s)
+        lo, hi = bbox(upper["shapes"])
+        sink = (lo[2] - bbox(lower["shapes"])[1][2]) + 3
+        sc._move_to(upper, (lo, hi), ([lo[0], lo[1], lo[2] - sink], [hi[0], hi[1], hi[2] - sink]))
+        self.assertTrue(sc.fix_inside(s, self.six)[0].startswith("Nudged"))
+        self.assertEqual(s["description"], self.MODEL_TEXT)
+
+    def test_when_nothing_fits_the_text_says_so(self):
+        s = self.one_tall_stack()
+        with mock.patch.object(sc, "inside_z", lambda env: (-60, 60)):     # a frame far too short
+            notes = sc.fix_inside(s, self.six)
+        self.assertTrue(notes[0].startswith("Not enough room inside"))
+        self.assertEqual(s["fit"]["verdict"], "does_not_fit")
+        self.assertIn("it doesn't fit", s["description"]["layout"])
 
     def column_pair(self, s):
         """Two inside parts stacked in the same column, lower one first."""
@@ -283,6 +324,68 @@ class InsideTheFrameTest(Base):
         out = g.generate(self.six)
         self.assertTrue(any("stuck out of the frame" in n for n in out["repairs"]))
         self.assert_all_inside_and_apart(out["scene"], self.six)
+
+
+class SolarPanelTest(Base):
+    def setUp(self):
+        super().setUp()
+        self.six = design("A 6U CubeSat that images wildfires for 1 year")
+
+    def panels(self, s, d):
+        return [p for p in s["parts"] if p["part_index"] >= 0 and sc.kind_of(d["parts"][p["part_index"]]).startswith("solar")]
+
+    def test_default_panels_and_wings_are_left_alone(self):
+        d = copy.deepcopy(self.six)
+        solar = next(p for p in d["parts"] if p["slot"] == "solar")
+        solar["quantity"] = 4                      # two on the wide faces, two too wide for the narrow ones: wings
+        for dd in (self.six, d):
+            s = default_scene(dd)
+            before = json.dumps(s)
+            self.assertEqual(sc.fix_outside(s, dd), [])
+            self.assertEqual(json.dumps(s), before)
+
+    def test_a_patch_pushed_through_the_wall_goes_onto_a_face(self):
+        # What Sonnet did next: the X-band patch half inside the frame, poking through the side.
+        s = default_scene(self.six)
+        patch = next(p for p in s["parts"] if p["part_index"] >= 0 and sc.kind_of(self.six["parts"][p["part_index"]]) == "patch_nadir")
+        patch["shapes"] = place(library.lookup("X-band 4x4 Patch Antenna")["shapes"], [-54, 0, -140], "-y")
+        notes = sc.fix_outside(s, self.six)
+        self.assertTrue(any(n.startswith("Put X-band 4x4 Patch Antenna flat on a face") for n in notes))
+        lo, hi = bbox(patch["shapes"])
+        env = envelope(self.six)
+        n = [hi[k] - lo[k] for k in range(3)].index(min(hi[k] - lo[k] for k in range(3)))
+        self.assertTrue(lo[n] >= env[n] / 2 - 2 or hi[n] <= -env[n] / 2 + 2)
+
+    def test_an_antenna_module_inside_the_frame_goes_to_the_end_face(self):
+        # Sonnet once put the UHF module inside the top of a 3U, on top of a board.
+        d = design("3U radio relay at 500 km for 2 years")
+        s = default_scene(d)
+        uhf = next(p for p in s["parts"] if p["part_index"] >= 0 and sc.kind_of(d["parts"][p["part_index"]]) == "whip_antenna")
+        want = json.dumps(uhf["shapes"])
+        lo, hi = bbox(uhf["shapes"])
+        sc._move_to(uhf, (lo, hi), ([lo[0], lo[1], lo[2] - 30], [hi[0], hi[1], hi[2] - 30]))
+        notes = sc.fix_outside(s, d)
+        self.assertTrue(any(uhf["label"] in n for n in notes))
+        self.assertEqual(json.dumps(uhf["shapes"]), want)
+
+    def test_wide_panels_on_the_narrow_faces_move_to_the_wide_ones(self):
+        # What Sonnet did on a 6U: the 220 mm panels on the 100 mm faces, hanging 60 mm past each edge.
+        s = default_scene(self.six)
+        s["description"] = {"overview": "o", "layout": "Panels on the narrow faces."}
+        entry = library.lookup("6U Solar Panel")
+        for p, (y, up) in zip(self.panels(s, self.six), [(-117, "-y"), (117, "+y")]):
+            p["shapes"] = place(entry["shapes"], [0, y, 0], up)
+        patch = next(p for p in s["parts"] if p["part_index"] >= 0 and sc.kind_of(self.six["parts"][p["part_index"]]) == "patch_nadir")
+        # The patch flat on the +x face, right where a panel will land.
+        patch["shapes"] = place(library.lookup("X-band 4x4 Patch Antenna")["shapes"], [54, 0, -140], "+x")
+        notes = sc.fix_outside(s, self.six)
+        self.assertTrue(notes[0].startswith("Moved the solar panels to faces they fit"))
+        want = {p["ref"]: p["shapes"] for p in self.panels(default_scene(self.six), self.six)}
+        for p in self.panels(s, self.six):
+            self.assertEqual(p["shapes"], want[p["ref"]])
+            self.assertFalse(sc._overlap(bbox(p["shapes"]), bbox(patch["shapes"]), 0.5))
+        self.assertTrue(any("X-band" in n and n.startswith("Lifted") for n in notes))   # the patch now sits on its panel
+        self.assertIn("moved the solar panels", s["description"]["layout"])
 
 
 class ModelPlacesLibraryPartsTest(Base):

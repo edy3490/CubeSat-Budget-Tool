@@ -170,6 +170,7 @@ def _inside_part(scene_part: dict, design: dict) -> bool:
 
 
 INSIDE_KINDS = ("board", "battery", "adcs", "imager", "payload_box")
+UHF_BASE_MM = 98      # a UHF antenna module's base; its library size includes the deployed tapes
 OVERLAP_MM = 1        # inside parts closer than this (in all three directions) count as overlapping
 
 
@@ -232,8 +233,11 @@ def fix_inside(scene: dict, design: dict) -> list[str]:
     offenders = out + clashing
     if not offenders:
         return []
-    why = "; ".join(t for t in (out and "stuck out of the frame: " + ", ".join(p["label"] for p in out),
-                                clashing and "overlapped another part: " + ", ".join(p["label"] for p in clashing)) if t)
+    def name(p):
+        return p["extra"]["name"] if p.get("extra") else p["label"]
+
+    why = "; ".join(t for t in (out and "stuck out of the frame: " + ", ".join(name(p) for p in out),
+                                clashing and "overlapped another part: " + ", ".join(name(p) for p in clashing)) if t)
 
     def target(p, cx, cy, z0):
         sz = size(p)
@@ -300,6 +304,7 @@ def fix_inside(scene: dict, design: dict) -> list[str]:
     if moves is not None:
         for p in offenders:
             _move_to(p, box[id(p)], moves[id(p)])
+        describe_layout(scene, design, stack, why)
         return [f"Moved to free space inside the frame ({why})"]
 
     # 3. Re-stack everything inside in columns (the camera first, lens out the bottom).
@@ -319,12 +324,215 @@ def fix_inside(scene: dict, design: dict) -> list[str]:
             new[id(p)] = target(p, 0, 0, z0)
             bottom = [z0 + sz[2] + GAP_MM] * len(cols)
     if max(b[1][2] for b in new.values()) > ceiling + 1:
+        need = inside_stack_mm(design)
         scene["fit"] = {"verdict": "does_not_fit",
-                        "note": f"The inside parts need about {inside_stack_mm(design):.0f} mm of stacking, more than the frame holds."}
+                        "note": f"The inside parts need about {need:.0f} mm of stacking, more than the frame holds."}
+        desc = scene.get("description")
+        if isinstance(desc, dict):     # the model's text may say it fits: say plainly that it doesn't
+            desc["layout"] = (desc.get("layout", "") + f" As drawn, though, it doesn't fit: {why}. Stacked, the inside "
+                              f"parts need about {need:.0f} mm and the frame has {ceiling - floor:.0f} mm.").strip()
         return [f"Not enough room inside to fix this ({why})"]
     for p in stack:
         _move_to(p, box[id(p)], new[id(p)])
+    describe_layout(scene, design, stack, why)
     return [f"Re-stacked the inside parts in columns ({why})"]
+
+
+def fix_outside(scene: dict, design: dict) -> list[str]:
+    """Fix solar panels and patch antennas the model placed badly. Changes scene in place.
+
+    - A body panel is fine when it lies flat on a side face, just outside the frame, without hanging
+      past that face's edges or ends, and doesn't overlap another panel; a wing is fine at the top
+      end. If any panel isn't, all panels take the default layout's places (wide faces first,
+      wings for panels too wide for any face).
+    - An antenna (patch, or UHF module for an end face) is fine when it lies flat on a face,
+      outside the frame. If not, it takes the default layout's place.
+    - A patch or outside extra a panel covers is lifted to sit on top of the panel.
+    Returns notes about what was changed.
+    """
+    env = scene["envelope_mm"]
+    Z = env[2]
+    default = None
+
+    def kind(p):
+        return "extra" if p.get("extra") else kind_of(design["parts"][p["part_index"]])
+
+    def thin(lo, hi):                                 # the thin direction = the face normal
+        size = [hi[k] - lo[k] for k in range(3)]
+        return size.index(min(size))
+
+    def on_face(lo, hi, n):
+        return lo[n] >= env[n] / 2 - 2 or hi[n] <= -env[n] / 2 + 2
+
+    def to_default(p):
+        nonlocal default
+        default = default or {q["ref"]: q for q in default_scene(design)["parts"]}
+        d = default.get(p["ref"])
+        if d:
+            p["shapes"] = [dict(s) for s in d["shapes"]]
+            if d.get("place"):
+                p["place"] = dict(d["place"])
+
+    def panel_ok(p):
+        lo, hi = bbox(p["shapes"])
+        n = thin(lo, hi)
+        if n == 2:                                    # lying across the end: only a wing at the top
+            return lo[2] >= Z / 2 - 10
+        other = 1 - n
+        return (on_face(lo, hi, n) and max(-lo[other], hi[other]) <= env[other] / 2 + 3
+                and max(-lo[2], hi[2]) <= Z / 2 + 3)
+
+    notes, said = [], []
+    panels = [p for p in scene["parts"] if p["shapes"] and kind(p).startswith("solar")]
+    bad = [p for p in panels if not panel_ok(p)]
+    bad += [a for i, a in enumerate(panels) for b in panels[i + 1:]
+            if a not in bad and _overlap(bbox(a["shapes"]), bbox(b["shapes"]), 1)]
+    if bad:
+        for p in panels:
+            to_default(p)
+        notes.append(f"Moved the solar panels to faces they fit ({', '.join(p['label'] for p in bad)} didn't)")
+        said.append("moved the solar panels to faces they fit")
+
+    # UHF modules first: the default GNSS patch sits on top of the default UHF module.
+    antennas = sorted((p for p in scene["parts"] if p["shapes"] and kind(p) in ("whip_antenna", "patch_nadir", "patch_zenith")),
+                      key=lambda p: kind(p) != "whip_antenna")
+    off = [p for p in antennas if not on_face(*bbox(p["shapes"]), thin(*bbox(p["shapes"])))]
+    for p in off:
+        to_default(p)
+    # A patch buried in a UHF module (say, after the module moved out to the end face) sits on top of it.
+    # Only the module's base counts: its size includes the deployed tape antennas, which a patch may sit under.
+    def base(b, half=UHF_BASE_MM / 2):
+        n = thin(*b)
+        c = [(b[0][k] + b[1][k]) / 2 for k in range(3)]
+        return ([b[0][k] if k == n else max(b[0][k], c[k] - half) for k in range(3)],
+                [b[1][k] if k == n else min(b[1][k], c[k] + half) for k in range(3)])
+
+    whips = [base(bbox(p["shapes"])) for p in antennas if kind(p) == "whip_antenna"]
+    for p in antennas:
+        if kind(p) != "whip_antenna" and p not in off and any(_overlap(bbox(p["shapes"]), w, 0.5) for w in whips):
+            to_default(p)
+            off.append(p)
+    if off:
+        notes.append(f"Put {', '.join(p['label'] for p in off)} flat on a face outside the frame")
+        said.append(f"put {_join([p['label'] for p in off])} flat on a face outside the frame")
+
+    lifted = []
+    for p in scene["parts"]:
+        if not p["shapes"] or kind(p) not in ("patch_nadir", "patch_zenith", "extra"):
+            continue
+        lo, hi = bbox(p["shapes"])
+        if kind(p) == "extra" and all(abs(lo[k] + hi[k]) / 2 < env[k] / 2 - 5 for k in range(3)):
+            continue                                  # an extra inside the frame isn't on a face
+        for q in panels:
+            qlo, qhi = bbox(q["shapes"])
+            if not _overlap((lo, hi), (qlo, qhi), 0.5):
+                continue
+            n = thin(qlo, qhi)
+            d = [0.0, 0.0, 0.0]
+            d[n] = (qhi[n] + 0.5 - lo[n]) if qlo[n] + qhi[n] > 0 else (qlo[n] - 0.5 - hi[n])
+            _move_to(p, (lo, hi), ([lo[k] + d[k] for k in range(3)], [hi[k] + d[k] for k in range(3)]))
+            lo, hi = bbox(p["shapes"])
+            lifted.append(p["extra"]["name"] if p.get("extra") else p["label"])
+    if lifted:
+        notes.append(f"Lifted {', '.join(lifted)} onto the solar panel under it")
+        said.append(f"set {_join(lifted)} on top of the solar panels")
+
+    desc = scene.get("description")
+    if said and isinstance(desc, dict) and desc.get("layout"):
+        desc["layout"] += " The app " + _join(said) + "."
+    return notes
+
+
+_ORDINAL = ["One", "the second", "the third", "the fourth", "the fifth", "the sixth"]
+_FACES = {(2, 1): "the top (zenith) end", (2, -1): "the Earth-facing end", (0, 1): "a side face", (0, -1): "a side face",
+          (1, 1): "a side face", (1, -1): "a side face"}
+
+
+def _join(names: list[str]) -> str:
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+
+
+def describe_layout(scene: dict, design: dict, stack: list[dict], why: str) -> None:
+    """Rewrite the layout text, fit and summary from where the parts actually are. Used after
+    fix_inside moved parts to new places, so the model's own words no longer match the drawing."""
+    env = scene["envelope_mm"]
+    X, Y, Z = env
+    floor, ceiling = inside_z(env)
+    cols = _columns(env)
+    cell = (X / len({c[0] for c in cols}), Y / len({c[1] for c in cols}))
+
+    def name(p):
+        return p["extra"]["name"] if p.get("extra") else p["label"]
+
+    def imager(p):
+        return not p.get("extra") and kind_of(design["parts"][p["part_index"]]) == "imager"
+
+    groups, wide = [[] for _ in cols], []
+    for p in stack:
+        lo, hi = bbox(p["shapes"])
+        if hi[0] - lo[0] > cell[0] + 2 or hi[1] - lo[1] > cell[1] + 2:
+            wide.append(p)
+            continue
+        c = [(lo[k] + hi[k]) / 2 for k in range(2)]
+        groups[min(range(len(cols)), key=lambda j: math.dist(cols[j][:2], c))].append(p)
+    groups = [sorted(g, key=lambda p: bbox(p["shapes"])[0][2]) for g in groups if g]
+
+    def names(g):
+        return _join([name(p) + (" (lens out through the Earth-facing face)" if imager(p) and bbox(p["shapes"])[0][2] < -Z / 2 else "")
+                      for p in g])
+
+    def listed(g):             # "holds X" or "holds, from the Earth-facing end up, X and Y"
+        return " " + names(g) if len(g) == 1 else ", from the Earth-facing end up, " + names(g)
+
+    need, room = inside_stack_mm(design), ceiling - floor
+    if len(groups) <= 1:
+        text = [f"The inside parts sit in one stack along the rails, from the Earth-facing end up: {names(groups[0]) if groups else 'none'}."]
+    else:
+        reason = f", because in one stack they would need about {need:.0f} mm and the frame has {room:.0f} mm" if need > room else ""
+        text = [f"The inside parts are split into {len(groups)} side-by-side stacks along the rails{reason}."]
+        text.append("; ".join(f"{_ORDINAL[min(i, len(_ORDINAL) - 1)]} holds{listed(g)}"
+                              for i, g in enumerate(groups)) + ".")
+    if wide:
+        text.append(f"{_join([name(p) for p in wide])} {'takes' if len(wide) == 1 else 'take'} the full width of the frame.")
+
+    # What's on the outside, by face.
+    faces: dict[str, list[str]] = {}
+    panels = wings = 0
+    for p in scene["parts"]:
+        if p in stack or not p["shapes"] or (p.get("part_index", -1) >= 0 and kind_of(design["parts"][p["part_index"]]) == "structure"):
+            continue
+        k = "extra" if p.get("extra") else kind_of(design["parts"][p["part_index"]])
+        lo, hi = bbox(p["shapes"])
+        if k.startswith("solar"):    # body panels run along the rails; wings are short in z
+            wings, panels = (wings, panels + 1) if hi[2] - lo[2] > Z / 2 else (wings + 1, panels)
+            continue
+        face = next((_FACES[(a, sgn)] for a in (2, 0, 1) for sgn in (1, -1)
+                     if (lo[a] >= env[a] / 2 - 3 if sgn > 0 else hi[a] <= -env[a] / 2 + 3)), None)
+        if face == "a side face":
+            zc = (lo[2] + hi[2]) / 2
+            face += " near the Earth-facing end" if zc < -Z / 4 else " near the top end" if zc > Z / 4 else ""
+        if face:
+            faces.setdefault(face, []).append(name(p))
+    outside = [f"{_join(n)} on {f}" for f, n in faces.items()]
+    if panels:
+        outside.append("the body solar panels on the long faces")
+    if wings:
+        outside.append("the larger solar panels as wings reaching out from the top end")
+    if outside:
+        text.append("Outside: " + "; ".join(outside) + ".")
+
+    tallest = max(bbox(p["shapes"])[1][2] for p in stack)
+    spare = ceiling - tallest
+    verdict = "fits" if spare >= 0.05 * room else "tight"
+    fit_note = f"The tallest stack uses {tallest - floor:.0f} of the {room:.0f} mm inside the frame, leaving {max(spare, 0):.0f} mm."
+    text.append(f"{fit_note} These positions were set by the app, not the model, because parts {why}.")
+
+    scene["fit"] = {"verdict": verdict, "note": fit_note}
+    scene["summary"] = (f"Inside parts in {len(groups)} side-by-side stacks along the rails" if len(groups) > 1
+                        else "Inside parts in one stack along the rails") + ", re-arranged so nothing overlaps or sticks out."
+    desc = scene.get("description")
+    if isinstance(desc, dict):
+        desc["layout"] = " ".join(text)
 
 
 def _nudge(stack, box, top):
@@ -567,8 +775,11 @@ def default_scene(design: dict) -> dict:
     for info in (i for i in items if kind_of(i["part"]) == "patch_zenith"):
         e = entry_of(info)
         h = e["size"][2] if e else 4
+        half = (e["size"][1] if e else 30) / 2
         x, y = X / 4, Y / 4
-        on_antenna = whips and abs(x) + 20 <= 49 and abs(y) + 20 <= 49
+        on_antenna = whips and abs(x) + half <= UHF_BASE_MM / 2 and abs(y) + half <= UHF_BASE_MM / 2
+        if whips and not on_antenna:     # beside the UHF module on the top face: clear its base
+            y = max(y, UHF_BASE_MM / 2 + half + 1)
         zc = (top_level if on_antenna else Z / 2) + h / 2
         if e:
             put(info, e, (x, y, zc))

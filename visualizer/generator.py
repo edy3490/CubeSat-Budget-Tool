@@ -138,7 +138,7 @@ SCENE_SCHEMA = {
 
 # Part of every cache key: a change to the prompt, the format or the fix-up rules means old layouts
 # are redrawn. Bump CHECKS when scene.fix_inside (or another fix-up) changes.
-CHECKS = "inside-2"
+CHECKS = "inside-3,outside-1"
 PROMPT_VERSION = hashlib.sha256((SYSTEM_PROMPT + json.dumps(SCENE_SCHEMA) + CHECKS).encode()).hexdigest()[:8]
 
 
@@ -189,6 +189,8 @@ def build_prompt(design: dict, todo: list[dict], kept: list[dict], request: dict
               f"Inside: z from {lo:g} to {hi:g} ({hi - lo:g} mm). Board columns, centers [x, y]: {cols}. "
               f"The inside parts need about {need:.0f} mm stacked"
               + (", more than one column holds, so split them across the columns." if need > hi - lo and len(cols) > 1 else "."),
+              f"Side faces: +x and -x are {env[1]:g} x {env[2]:g} mm, +y and -y are {env[0]:g} x {env[2]:g} mm. "
+              "A body panel goes only on a face at least as wide as the panel.",
               f"Satellite: {design['name']}"]
     drawn = [{"name": e["name"], "size": e["size"], "purpose": e.get("purpose", "")[:80]}
              for e in library.generated_extras()[:MAX_DRAWN_EXTRAS]]
@@ -425,10 +427,13 @@ class SceneGenerator:
                                "explode": [0, 0, 0], "shapes": place(local, pos, up, spin),
                                "place": {"pos": pos, "up": up, "spin": spin}, "role": meta["purpose"], "extra": meta}
         fixed["parts"] += list(extras.values())
-        repairs += sc.fix_inside(fixed, design)             # nothing inside sticks out or overlaps
 
         d = raw.get("description") if isinstance(raw.get("description"), dict) else {}
         fixed["description"] = {"overview": str(d.get("overview") or "")[:1500], "layout": str(d.get("layout") or "")[:1500]}
+        # Nothing inside sticks out or overlaps. Runs after the description so that, if parts move
+        # to new places, it can rewrite the layout text to match.
+        repairs += sc.fix_outside(fixed, design)
+        repairs += sc.fix_inside(fixed, design)
         sc.explode(fixed, design)
         return fixed, repairs, saved
 
