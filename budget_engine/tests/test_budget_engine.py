@@ -109,6 +109,29 @@ class BudgetEngineTest(unittest.TestCase):
                  - plain["power_budget"]["orbit_avg_consumption_w"])
         self.assertAlmostEqual(added, 3 * 0.85 * 0.10 + 1.2, places=2)
 
+    def test_missing_core_subsystems_are_flagged(self):
+        # Structure, solar and a battery only: no EPS, flight computer or radio
+        r = run([{"component_id": 2}, {"component_id": 11, "quantity": 2}, {"component_id": 30}])
+        self.assertEqual(r["required_subsystems"]["missing"], ["eps", "obc", "comms"])
+        self.assertFalse(r["summary"]["complete"])
+        self.assertIn("MISSING_SUBSYSTEM: eps, obc, comms", r["warnings"])
+
+    def test_eps_battery_counts_as_storage_and_imager_needs_attitude_control(self):
+        # iEPS Type B has a 45 Wh battery built in; the imager has no ADCS to point it
+        r = run([{"component_id": 2}, {"component_id": 11, "quantity": 2}, {"component_id": 22},
+                 {"component_id": 40}, {"component_id": 60}, {"component_id": 80}])
+        self.assertEqual(r["required_subsystems"]["missing"], ["adcs"])
+        with_adcs = run([{"component_id": 2}, {"component_id": 11, "quantity": 2}, {"component_id": 22},
+                         {"component_id": 40}, {"component_id": 60}, {"component_id": 80}, {"component_id": 52}])
+        self.assertTrue(with_adcs["required_subsystems"]["complete"])
+
+    def test_incomplete_configs_rank_after_complete(self):
+        bare = run([{"component_id": 2}, {"component_id": 11, "quantity": 2}])
+        full = run([{"component_id": 2}, {"component_id": 11, "quantity": 2}, {"component_id": 22},
+                    {"component_id": 40}, {"component_id": 60}])
+        ranking = be.build_report([bare, full], be.MissionParams())["comparison_ranked_by_usd_per_watt_year"]
+        self.assertEqual([x["complete"] for x in ranking], [True, False])
+
     def test_cli_writes_json(self):
         with tempfile.TemporaryDirectory() as d:
             out = Path(d) / "r.json"

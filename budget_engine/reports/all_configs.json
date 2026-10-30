@@ -1,7 +1,7 @@
 {
   "report_type": "cubesat_budget",
   "schema_version": "1.0",
-  "generated_at": "2026-10-30T19:21:12+00:00",
+  "generated_at": "2026-10-30T21:00:17+00:00",
   "how_to_read": "Read 'summary' and 'warnings' first; details follow. Units in key names. cost_min_only=true: some parts unpriced. *_basis 'estimate' = unsourced.",
   "mission_assumptions": {
     "altitude_km": 500.0,
@@ -38,6 +38,7 @@
     "gyro": 1.0
   },
   "methodology": {
+    "required_subsystems": "Every build needs structure, solar, eps, battery (or an EPS with an integrated battery), obc and comms; builds with an imager also need attitude control. A vendor platform covers all of them. Incomplete builds rank after complete ones.",
     "mass": "Sum of quantity x unit mass, compared to the CubeSat Design Specification max mass for the form factor.",
     "power_generation": "orbit_avg = peak solar W x solar_derate x EPS efficiency x sunlit fraction (cylindrical shadow, beta=0 worst case).",
     "power_consumption": "orbit_avg = sum(peak W x duty_cycle). Duty cycles default per subsystem; override per item in a config file.",
@@ -66,11 +67,16 @@
         "cost_usd": 93720,
         "cost_min_only": true,
         "years": 1.14,
-        "usd_per_watt_year": 20400
+        "usd_per_watt_year": 20400,
+        "complete": true
       },
       "warnings": [
         "UNPRICED: NanoMind A3200"
       ],
+      "required_subsystems": {
+        "complete": true,
+        "missing": []
+      },
       "mass_budget": {
         "total_mass_kg": 0.799,
         "structural_limit_kg": 2.0,
@@ -286,11 +292,16 @@
         "cost_usd": 288900,
         "cost_min_only": true,
         "years": 1.58,
-        "usd_per_watt_year": 12959
+        "usd_per_watt_year": 12959,
+        "complete": true
       },
       "warnings": [
         "UNPRICED: iOBC, Mantis"
       ],
+      "required_subsystems": {
+        "complete": true,
+        "missing": []
+      },
       "mass_budget": {
         "total_mass_kg": 2.658,
         "structural_limit_kg": 6.0,
@@ -557,12 +568,17 @@
         "cost_usd": 446490,
         "cost_min_only": true,
         "years": 1.74,
-        "usd_per_watt_year": 17050
+        "usd_per_watt_year": 17050,
+        "complete": true
       },
       "warnings": [
         "PEAK_OVER_SOLAR",
         "UNPRICED: iOBC, XACT-100, Caiman"
       ],
+      "required_subsystems": {
+        "complete": true,
+        "missing": []
+      },
       "mass_budget": {
         "total_mass_kg": 5.328,
         "structural_limit_kg": 12.0,
@@ -844,13 +860,18 @@
         "cost_usd": 430190,
         "cost_min_only": true,
         "years": 5.0,
-        "usd_per_watt_year": 5717
+        "usd_per_watt_year": 5717,
+        "complete": true
       },
       "warnings": [
         "PEAK_OVER_SOLAR",
         "THRUSTER_BATTERY_LIMITED: 75.0/19.12 W",
         "UNPRICED: NanoMind A3200, XACT-15, BIT-3 RF ion (iodine)"
       ],
+      "required_subsystems": {
+        "complete": true,
+        "missing": []
+      },
       "mass_budget": {
         "total_mass_kg": 6.331,
         "structural_limit_kg": 12.0,
@@ -1139,11 +1160,16 @@
         "cost_usd": 271100,
         "cost_min_only": true,
         "years": 5.0,
-        "usd_per_watt_year": 2562
+        "usd_per_watt_year": 2562,
+        "complete": true
       },
       "warnings": [
         "UNPRICED: OBC (2016), BGT-X5 class green monoprop (AF-M315E)"
       ],
+      "required_subsystems": {
+        "complete": true,
+        "missing": []
+      },
       "mass_budget": {
         "total_mass_kg": 3.596,
         "structural_limit_kg": 6.0,
@@ -1385,6 +1411,7 @@
       "usd_per_watt_year": 2562,
       "total_mission_cost_usd": 271100,
       "over_limit": false,
+      "complete": true,
       "mass_margin_kg": 2.404,
       "energy_balance": "POSITIVE",
       "operational_years": 5.0,
@@ -1396,6 +1423,7 @@
       "usd_per_watt_year": 5717,
       "total_mission_cost_usd": 430190,
       "over_limit": false,
+      "complete": true,
       "mass_margin_kg": 5.669,
       "energy_balance": "POSITIVE",
       "operational_years": 5.0,
@@ -1407,6 +1435,7 @@
       "usd_per_watt_year": 12959,
       "total_mission_cost_usd": 288900,
       "over_limit": false,
+      "complete": true,
       "mass_margin_kg": 3.342,
       "energy_balance": "POSITIVE",
       "operational_years": 1.58,
@@ -1418,6 +1447,7 @@
       "usd_per_watt_year": 17050,
       "total_mission_cost_usd": 446490,
       "over_limit": false,
+      "complete": true,
       "mass_margin_kg": 6.672,
       "energy_balance": "POSITIVE",
       "operational_years": 1.74,
@@ -1429,6 +1459,7 @@
       "usd_per_watt_year": 20400,
       "total_mission_cost_usd": 93720,
       "over_limit": false,
+      "complete": true,
       "mass_margin_kg": 1.201,
       "energy_balance": "POSITIVE",
       "operational_years": 1.14,

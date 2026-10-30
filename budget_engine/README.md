@@ -80,7 +80,7 @@ Each entry in `configurations` starts with:
 ```json
 "summary": {"mass_kg": 2.658, "limit_kg": 6.0, "margin_kg": 3.342, "energy": "POSITIVE",
             "net_w": 9.61, "cost_usd": 288900, "cost_min_only": true, "years": 1.58,
-            "usd_per_watt_year": 12959},
+            "usd_per_watt_year": 12959, "complete": true},
 "warnings": ["UNPRICED: iOBC, Mantis"]
 ```
 
@@ -88,12 +88,13 @@ A negative `margin_kg` means the build is over the structural limit. `cost_min_o
 some parts have no price, so costs are lower bounds.
 
 Warning codes: `OVER_MASS`, `ENERGY_NEGATIVE`, `ECLIPSE_FAIL`, `PEAK_OVER_SOLAR`,
-`THRUSTER_BATTERY_LIMITED`, `NO_EPS`, `UNPRICED`, `NO_MASS`, `UNKNOWN_MISSION_KEY`.
+`THRUSTER_BATTERY_LIMITED`, `MISSING_SUBSYSTEM`, `UNPRICED`, `NO_MASS`, `UNKNOWN_MISSION_KEY`.
 
 Detailed sections follow:
 
 | Section | Contents |
 |---|---|
+| `required_subsystems` | `complete` and the list of `missing` core subsystems |
 | `mass_budget` | Total vs CDS limit, margin, `over_limit`, `overage_kg`, mass by subsystem |
 | `power_budget` | Orbit-average generation vs consumption, `energy_balance`, Wh per orbit/day, battery eclipse depth of discharge, peak-load check, per-load breakdown |
 | `propulsion_power_check` | Whether the thruster can fire on solar alone; max sustainable thruster duty cycle |
@@ -103,10 +104,14 @@ Detailed sections follow:
 | `components` | Each part with quantity, unit values, data basis and duty cycle |
 
 With more than one build, `comparison_ranked_by_usd_per_watt_year` ranks them. Builds over the
-mass limit always rank last.
+mass limit rank last, then builds missing a required subsystem.
 
 ## Method
 
+- **Required subsystems:** every build needs `structure`, `solar`, `eps`, `battery`, `obc` and `comms`.
+  An EPS with a built-in battery (non-zero `energy_wh`) counts as the battery, and a vendor `platform`
+  counts as all six. A build with an `imager` also needs attitude control (`adcs`, `reaction_wheel` or
+  `magnetorquer`). Edit `REQUIRED_SUBSYSTEMS` / `CONDITIONAL_SUBSYSTEMS` to change the rules.
 - **Mass:** sum of quantity × unit mass, compared with the CubeSat Design Specification limit for the form factor.
 - **Power:** orbit-average generation = peak solar × solar derate × EPS efficiency × sunlit fraction
   (cylindrical shadow, beta = 0, the worst case). Consumption = Σ peak power × duty cycle.

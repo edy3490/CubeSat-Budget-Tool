@@ -1,7 +1,7 @@
 {
   "report_type": "cubesat_budget",
   "schema_version": "1.0",
-  "generated_at": "2026-10-30T18:24:13+00:00",
+  "generated_at": "2026-10-30T21:00:17+00:00",
   "how_to_read": "Read 'summary' and 'warnings' first; details follow. Units in key names. cost_min_only=true: some parts unpriced. *_basis 'estimate' = unsourced.",
   "mission_assumptions": {
     "altitude_km": 500.0,
@@ -23,9 +23,22 @@
     "adcs": 1.0,
     "comms": 0.15,
     "imager": 0.15,
-    "propulsion": 0.1
+    "propulsion": 0.1,
+    "gnss": 1.0,
+    "antenna_uhf": 0.0,
+    "antenna_l": 0.0,
+    "antenna_s": 0.0,
+    "antenna_x": 0.0,
+    "reaction_wheel": 0.1,
+    "magnetorquer": 0.3,
+    "star_tracker": 1.0,
+    "sun_sensor": 1.0,
+    "horizon_sensor": 1.0,
+    "magnetometer": 1.0,
+    "gyro": 1.0
   },
   "methodology": {
+    "required_subsystems": "Every build needs structure, solar, eps, battery (or an EPS with an integrated battery), obc and comms; builds with an imager also need attitude control. A vendor platform covers all of them. Incomplete builds rank after complete ones.",
     "mass": "Sum of quantity x unit mass, compared to the CubeSat Design Specification max mass for the form factor.",
     "power_generation": "orbit_avg = peak solar W x solar_derate x EPS efficiency x sunlit fraction (cylindrical shadow, beta=0 worst case).",
     "power_consumption": "orbit_avg = sum(peak W x duty_cycle). Duty cycles default per subsystem; override per item in a config file.",
@@ -42,7 +55,8 @@
         "id": null,
         "name": "Overloaded 3U (example)",
         "form_factor": "3U",
-        "source": "budget_engine/examples/overloaded_3u.json"
+        "source": "examples/overloaded_3u.json",
+        "mission_overrides": null
       },
       "summary": {
         "mass_kg": 6.713,
@@ -53,7 +67,8 @@
         "cost_usd": 247600,
         "cost_min_only": true,
         "years": 5.0,
-        "usd_per_watt_year": 31902
+        "usd_per_watt_year": 31902,
+        "complete": false
       },
       "warnings": [
         "OVER_MASS: +0.713 kg",
@@ -61,8 +76,15 @@
         "ECLIPSE_FAIL: no battery",
         "PEAK_OVER_SOLAR",
         "THRUSTER_BATTERY_LIMITED: 75.0/1.82 W",
+        "MISSING_SUBSYSTEM: battery",
         "UNPRICED: NanoMind A3200, XACT-15, Chameleon (MS/HS), BIT-3 RF ion (iodine)"
       ],
+      "required_subsystems": {
+        "complete": false,
+        "missing": [
+          "battery"
+        ]
+      },
       "mass_budget": {
         "total_mass_kg": 6.713,
         "structural_limit_kg": 6.0,

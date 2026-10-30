@@ -42,3 +42,7 @@ env/
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# Visualizer token count (local)
+visualizer/usage.json
+visualizer/usage.tmp
