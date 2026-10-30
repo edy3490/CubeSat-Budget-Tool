@@ -152,7 +152,10 @@ class State:
 
     def respond(self, r, llm_used: bool, previous_id: str | None = None) -> dict:
         """Package a designer Result in the page's response shape."""
-        design_id = self.put({"spec": r.spec.model_dump(), "design": r.data["design"], "previous_id": previous_id})
+        # What the user asked for: the 3D call uses it to explain the satellite and add extras.
+        request = {"text": r.data["idea"], "goal": r.spec.mission_goal, "notes": r.spec.notes}
+        design_id = self.put({"spec": r.spec.model_dump(), "design": r.data["design"],
+                              "previous_id": previous_id, "request": request})
         return {
             "reply": reply_text(r.data, llm_used),
             "spec": {"design_id": design_id, **r.spec.model_dump()},
@@ -282,7 +285,8 @@ class Handler(BaseHTTPRequestHandler):
         previous = ({"design": prev["design"], "scene": prev["scene"], "source": prev["scene_source"]}
                     if prev and prev.get("scene") else None)
         out = self.state.generator.generate(entry["design"], regenerate=bool(body.get("regenerate")),
-                                            use_llm=self.state.use_llm, previous=previous)
+                                            use_llm=self.state.use_llm, previous=previous,
+                                            request=entry.get("request"))
         entry["scene"], entry["scene_source"] = out["scene"], out["source"]
         self._json(200, out)
 

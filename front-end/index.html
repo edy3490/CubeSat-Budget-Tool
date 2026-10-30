@@ -74,6 +74,9 @@ td small{display:block;color:var(--muted);font-size:12px}tfoot td{border-top:1px
 .labels div.hl{border-color:var(--accent);color:var(--accent)}
 .vempty{position:absolute;inset:0;display:grid;place-items:center;color:var(--muted);font-size:14px;text-align:center;padding:24px}
 .caption{margin:8px 0 0;font-size:13.5px;color:var(--muted)}.caption:empty{display:none}.caption b{color:var(--fg);font-weight:500}
+.how{margin-top:14px;padding:14px 16px;background:var(--card);border-radius:10px}.how p{margin:0 0 12px;font-size:14.5px}.how p:last-child{margin:0}
+.how .label{margin-bottom:6px}.how .notes{margin-bottom:14px}.how .notes b{font-weight:600}.how .tag{color:var(--accent);font-size:12.5px}
+tr.extra td:first-child{color:var(--accent)}
 /* build plan */
 .gantt{display:grid;grid-template-columns:minmax(110px,160px) minmax(0,1fr) auto;gap:6px 10px;align-items:center;font-size:13.5px}
 .gantt .track{position:relative;height:12px;background:var(--card);border-radius:4px}.gantt .bar{position:absolute;top:0;bottom:0;background:var(--accent);border-radius:4px;opacity:.85}
@@ -117,6 +120,13 @@ details ol{margin:6px 0 2px;padding-left:20px;font-size:13.5px;display:flex;flex
           <div class="tip" id="tip" hidden></div>
         </div>
         <p class="caption" id="vNote"></p>
+        <div class="how" id="howSec" hidden>
+          <p class="label">How it works</p>
+          <p id="howOverview"></p>
+          <ul class="notes parts-roles" id="howParts"></ul>
+          <p class="label">Why this layout</p>
+          <p id="howLayout"></p>
+        </div>
       </div>
       <div class="stats">
         <div class="stat"><div class="k">Mass</div><div class="v" id="massV">-</div><div class="s" id="massS"></div><div class="meter" id="massM"><i></i></div></div>
@@ -382,14 +392,16 @@ const viewer = await (async () => {
 
   // hover
   const ray = new THREE.Raycaster(), ptr = new THREE.Vector2();
+  // Parts are matched by key: design parts by their table row, added extras by their own ref.
+  const keyOf = p => p.part_index >= 0 ? "i" + p.part_index : "r" + p.ref;
   function highlight(i) {
     if (i === hovered) return;
     hovered = i;
-    const pi = i >= 0 ? groups[i].userData.part.part_index : -1;
-    groups.forEach(g => g.userData.labelEl.classList.toggle("hl", g.userData.part.part_index === pi));
+    const k = i >= 0 ? keyOf(groups[i].userData.part) : null;
+    groups.forEach(g => g.userData.labelEl.classList.toggle("hl", keyOf(g.userData.part) === k));
     groups.forEach(g => g.traverse(o => {
-      if (o.isMesh) o.material.emissive.set(g.userData.part.part_index === pi ? 0x3b5bdb : 0x000000);
-      if (o.isMesh) o.material.emissiveIntensity = g.userData.part.part_index === pi ? .55 : 0;
+      if (o.isMesh) o.material.emissive.set(keyOf(g.userData.part) === k ? 0x3b5bdb : 0x000000);
+      if (o.isMesh) o.material.emissiveIntensity = keyOf(g.userData.part) === k ? .55 : 0;
     }));
   }
   canvas.addEventListener("pointermove", ev => {
@@ -461,7 +473,8 @@ const viewer = await (async () => {
     setExplode(v, animate) { target = v; if (!animate) { t = v; apply(); if (autoFrame) frame(); } },
     get exploded() { return target > 0.5; },
     setLabels(on) { labelsOn = on; },
-    highlightPart(partIndex) { highlight(partIndex < 0 ? -1 : groups.findIndex(g => g.userData.part.part_index === partIndex)); },
+    highlightKey(k) { highlight(k ? groups.findIndex(g => keyOf(g.userData.part) === k) : -1); },
+    keyOf,
     set onHover(fn) { onHover = fn; },
   };
 })();
@@ -493,7 +506,7 @@ function render(b){
   setMeter("massM", b.massRatio, b.massState);
   setMeter("powM", b.powRatio, b.powState);
   $("rows").innerHTML = b.rows.map(r =>
-    `<tr data-i="${r.part_index}"><td>${esc(r.name)}${r.note ? `<small>${esc(r.note)}</small>` : ""}</td><td>${kg(r.kg)}</td>` +
+    `<tr data-k="i${r.part_index}"><td>${esc(r.name)}${r.note ? `<small>${esc(r.note)}</small>` : ""}</td><td>${kg(r.kg)}</td>` +
     `<td>${r.w ? fmt(r.w) : r.gen_w ? "+" + fmt(r.gen_w) : "–"}</td>` +
     `<td>${r.k == null ? '<span class="quote">quote</span>' : Math.round(r.k) + (r.estimate ? '<span class="est">*</span>' : "")}</td></tr>`).join("");
   $("tMass").textContent = (Math.round(b.mass*100)/100).toString();
@@ -503,8 +516,8 @@ function render(b){
     "W: peak draw, + = solar generation. * = estimated price.";
   $("notes").innerHTML = b.notes.map(n => `<li class="${esc(n[0])}">${esc(n[1])}</li>`).join("");
   document.querySelectorAll("#rows tr").forEach(tr => {
-    tr.addEventListener("mouseenter", () => viewer?.highlightPart(+tr.dataset.i));
-    tr.addEventListener("mouseleave", () => viewer?.highlightPart(-1));
+    tr.addEventListener("mouseenter", () => viewer?.highlightKey(tr.dataset.k));
+    tr.addEventListener("mouseleave", () => viewer?.highlightKey(null));
   });
 }
 
@@ -539,6 +552,43 @@ function showScene(sceneData, info){
   const fit = sceneData.fit || {};
   const verdict = { fits: "Fits", tight: "Tight fit", does_not_fit: "Doesn't fit" }[fit.verdict];
   $("vNote").innerHTML = [verdict && `<b>${esc(verdict)}:</b> ${esc(fit.note)}`, info.source === "default" ? "" : esc(sceneData.summary)].filter(Boolean).join(" ");
+  renderHow(sceneData, info);
+  renderExtraRows(sceneData);
+}
+
+// The model's explanation: overview, what each part does and why, and why the layout fits.
+function renderHow(sceneData, info){
+  const d = sceneData.description;
+  if (!d || info.source === "default" || !(d.overview || d.layout)) { $("howSec").hidden = true; return; }
+  $("howOverview").textContent = d.overview;
+  $("howLayout").textContent = d.layout;
+  const seen = new Set(), items = [];
+  for (const p of sceneData.parts) {
+    if (!p.role) continue;
+    const name = p.extra ? p.extra.name : current.design.parts[p.part_index].part;
+    if (seen.has(name)) continue;            // e.g. four identical solar panels: say it once
+    seen.add(name);
+    items.push(`<li><span><b>${esc(name)}</b>${p.extra ? ' <span class="tag">added for your request</span>' : ""}: ${esc(p.role)}</span></li>`);
+  }
+  $("howParts").innerHTML = items.join("");
+  $("howSec").hidden = false;
+}
+
+// Parts the model added for the request go in the parts table too, marked as estimates outside the totals.
+function renderExtraRows(sceneData){
+  document.querySelectorAll("#rows tr.extra").forEach(r => r.remove());
+  const extras = sceneData.parts.filter(p => p.extra);
+  for (const p of extras) {
+    const tr = document.createElement("tr");
+    tr.className = "extra"; tr.dataset.k = "r" + p.ref;
+    tr.innerHTML = `<td>${esc(p.extra.name)}<small>added for your request · ${esc(p.extra.drawing)} · estimate, not in the totals</small></td>` +
+      `<td>${p.extra.mass_kg == null ? "–" : kg(p.extra.mass_kg)}</td><td>${p.extra.power_w ? fmt(p.extra.power_w) : "–"}</td><td><span class="quote">–</span></td>`;
+    tr.addEventListener("mouseenter", () => viewer?.highlightKey(tr.dataset.k));
+    tr.addEventListener("mouseleave", () => viewer?.highlightKey(null));
+    $("rows").appendChild(tr);
+  }
+  const base = $("costNote").textContent.replace(/ Parts added for your request.*$/, "");
+  $("costNote").textContent = base + (extras.length ? " Parts added for your request are rough estimates and aren't in the totals." : "");
 }
 
 async function requestVisual(regenerate, model){
@@ -593,11 +643,17 @@ if (viewer) {
   viewer.onHover = (p, x, y) => {
     document.querySelectorAll("#rows tr.hl").forEach(r => r.classList.remove("hl"));
     if (!p || !current) { tip.hidden = true; return; }
-    const part = current.design.parts[p.part_index];
-    document.querySelector(`#rows tr[data-i="${p.part_index}"]`)?.classList.add("hl");
-    tip.innerHTML = `<b>${esc(p.label)}</b><span>${esc(part.vendor)} · ${esc(part.slot)}</span><br>` +
-      `${num(part.unit_mass_kg, 3)} kg` + (part.peak_power_w ? ` · ${num(part.peak_power_w / part.quantity, 2)} W` : "") +
-      ` · ${part.unit_cost_usd != null ? usd(part.unit_cost_usd) : "no public price"}`;
+    document.querySelector(`#rows tr[data-k="${viewer.keyOf(p)}"]`)?.classList.add("hl");
+    const role = p.role ? `<br><span>${esc(p.role)}</span>` : "";
+    if (p.extra) {
+      tip.innerHTML = `<b>${esc(p.extra.name)}</b><span>Added for your request · estimate</span><br>` +
+        `${num(p.extra.mass_kg, 2)} kg · ${num(p.extra.power_w, 1)} W` + role;
+    } else {
+      const part = current.design.parts[p.part_index];
+      tip.innerHTML = `<b>${esc(p.label)}</b><span>${esc(part.vendor)} · ${esc(part.slot)}</span><br>` +
+        `${num(part.unit_mass_kg, 3)} kg` + (part.peak_power_w ? ` · ${num(part.peak_power_w / part.quantity, 2)} W` : "") +
+        ` · ${part.unit_cost_usd != null ? usd(part.unit_cost_usd) : "no public price"}` + role;
+    }
     tip.hidden = false;
     tip.style.left = Math.min(x + 14, $("viewer").clientWidth - 270) + "px";
     tip.style.top = (y + 14) + "px";

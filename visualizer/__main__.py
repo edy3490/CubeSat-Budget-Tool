@@ -57,7 +57,8 @@ def main(argv=None) -> int:
     if r.data.get("off_topic"):
         print("That doesn't look like a satellite idea.")
         return 1
-    out = SceneGenerator(budget).generate(r.data["design"], use_llm=not args.no_llm)
+    request = {"text": " ".join(args.idea), "goal": r.spec.mission_goal, "notes": r.spec.notes}
+    out = SceneGenerator(budget).generate(r.data["design"], use_llm=not args.no_llm, request=request)
     if args.json:
         print(json.dumps(out, indent=1))
         return 0
@@ -67,6 +68,18 @@ def main(argv=None) -> int:
     print(f"parts: {len(s['parts'])}  shapes: {sum(len(p['shapes']) for p in s['parts'])}")
     print(f"fit: {s['fit']['verdict']} - {s['fit']['note']}")
     print(f"summary: {s['summary']}")
+    if s.get("description"):
+        print(f"\nHow it works: {s['description']['overview']}")
+        for p in s["parts"]:
+            if p.get("role"):
+                print(f"  - {p['label']}: {p['role']}")
+        print(f"Layout: {s['description']['layout']}")
+    for p in s["parts"]:
+        if p.get("extra"):
+            x = p["extra"]
+            print(f"extra: {x['name']} ({x['mass_kg']} kg, {x['power_w']} W, {x['drawing']}): {x['purpose']}")
+    if out.get("saved"):
+        print("saved to parts/generated/:", ", ".join(out["saved"]))
     for a in out["attempts"]:
         print("attempt:", a)
     for note in out["repairs"]:
@@ -83,10 +96,11 @@ def show_library() -> int:
     from designer import run
     from .library import entries, lookup
 
-    for e in sorted(entries(), key=lambda e: (e["mount"], e["name"])):
+    for e in sorted(entries(), key=lambda e: (e["source"] != "opus", e["mount"], e["name"])):
         size = " x ".join(f"{v:g}" for v in e["size"])
-        print(f"{e['mount']:5}  {size:>22} mm  {len(e['shapes']):3} shapes  {e['name']} ({e['vendor']})"
-              + ("  [estimated size]" if e["estimate"] else ""))
+        who = "opus     " if e["source"] == "opus" else f"generated ({e.get('drawn_by', '?')}, {e.get('kind', '?')}, {e.get('file')})"
+        print(f"{who}  {e['mount']:5}  {size:>22} mm  {len(e['shapes']):3} shapes  {e['name']} ({e['vendor']})"
+              + ("  [estimated size]" if e["estimate"] and e["source"] == "opus" else ""))
     ideas = [f"{s} {p} at {o} for {l}{x}" for s, p, o, l, x in itertools.product(
         ("1U", "3U", "6U", "12U"), ("camera", "radio relay", "radiation sensor", "demo payload"),
         ("300 km", "550 km", "800 km"), ("1 year", "5 years"), ("", " needs a thruster", " needs GPS"))]

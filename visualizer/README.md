@@ -6,15 +6,17 @@ Turns a design from `designer/` into a 3D scene of the CubeSat that `front-end/i
 design (parts list) ──> Claude places library parts ──> expand from library, check & repair ──> scene JSON ──> three.js
 ```
 
-## Part library (`library.py`)
+## Part library (`library.py` + `parts/`)
 
-Every part the designer picks is drawn once, ahead of time, in `library.py`. Claude Opus drew them in the coding session, not through the API.
+Every part the designer picks is drawn ahead of time, so most of the time the model only places parts. The drawings live in two folders, kept apart so it's clear who drew what (details in `parts/README.md`):
 
-- **Coverage:** 37 drawings (39 part names). The list came from running 1,536 different ideas through the designer, which used 34 distinct parts, plus 8 alternates it can pick.
-- **Sources:** sizes come from public dimensions where known. The rest are estimated from mass and form factor and marked `estimate`.
-- **Frame:** each part is drawn in its own frame, centered on its bounding box, with its own +z as "up". That's the components side of a board, the cells side of a panel, and the outward side of an antenna. A camera's lens is on its own -z.
-- **Checking it:** `python -m visualizer --library` lists the library and runs 288 ideas to check that nothing the designer picks is missing.
-- **Adding a part:** add an `_add(...)` call. The helpers (`card`, `panel`, `frame`, `lens_stack`, ...) do most of the work.
+| Folder | Drawn by |
+|---|---|
+| `parts/opus/drawings.py` | **Claude Opus**, in the coding session (not through the API). 37 drawings covering all 34 parts the designer used across 1,536 test ideas, plus 8 alternates. Real dimensions where known; estimates are marked. Checked first. |
+| `parts/generated/*.json` | **Sonnet or Haiku**, at runtime. Saved automatically the first time the model draws something the Opus set lacks: a catalog part with no drawing, or an extra invented for an unusual request (laser, robotic arm, ...). Reused from then on. Each file records who drew it, when, why, and a note asking Opus to review and redraw it. |
+
+- Each part is drawn in its own frame, centered on its bounding box, with its own +z as "up". That's the components side of a board, the cells side of a panel, and the outward side of an antenna. A camera's lens is on its own -z.
+- `python -m visualizer --library` lists both sets and checks that nothing the designer picks is missing.
 
 Because parts are pre-drawn, the model only **places** them (`placement.py`):
 
@@ -24,7 +26,22 @@ Because parts are pre-drawn, the model only **places** them (`placement.py`):
 | `up` | which body direction its own +z points: +x, -x, +y, -y, +z or -z |
 | `spin` | a turn about its own z: 0, 90, 180 or 270 |
 
-That's about 45 output tokens a part instead of about 300 to draw it. The model only draws a part from scratch if it isn't in the library.
+That's about 45 output tokens a part (plus its one-line role, below) instead of about 300 to draw it. The model only draws a part from scratch if it isn't in the library, and that drawing is saved to `parts/generated/`.
+
+## Explanation and extras
+
+In the same call, the model explains the satellite for a non-engineer. The page shows this under the 3D model as "How it works":
+
+- **Overview:** how the satellite does its mission (what does the job, how data and commands reach the ground, where power comes from, how it points).
+- **Role per part:** what each part does here and why it suits the job. It's grounded in the designer's own reason for the pick, which is passed to the model. The role also shows when you hover the part.
+- **Why this layout:** why the main parts sit where they do, and how that leads to the fit verdict.
+
+**Extras.** The model also gets the request text, the mission goal and any notes. If the request asks for something no listed part can do ("a satellite with a laser beam"), it adds 1-3 plausible extra parts:
+- each has a name, a purpose, and an estimated mass and power;
+- it draws and places them, or reuses an earlier extra by name;
+- impossible or unsafe ideas get a small, plausible version, and the purpose says so.
+
+Extras appear in the 3D model, in "How it works" and in the parts table, marked as estimates. They aren't added to the budget totals. On an edit they're kept, and the model can drop one the request no longer wants.
 
 **Edits only place what changed.** When a design is an edit of one that was already laid out with the same form factor, the unchanged parts keep their place. The model gets their bounding boxes as context and is asked only about the new or changed parts. A new form factor places everything again, which is still cheap.
 
@@ -42,11 +59,12 @@ Measured costs with Sonnet:
 
 | | Tokens | Time |
 |---|---|---|
-| New 3U/6U design | about 4k (3.3k in, 0.8k out) | ~6 s |
-| Edit | about 3.3k (2.9k in, 0.3k out) | ~4 s |
-| Same parts list again | 0 (reused) | instant |
+| New design, with description | about 6.5k (5.1k in, 1.5k out) | ~10 s |
+| New design with drawn extras (laser) | about 6.3k (4.6k in, 1.7k out) | ~12 s |
+| Edit | about 5.4k (4.6k in, 0.7k out) | ~7 s |
+| Same parts list and request again | 0 (reused) | instant |
 
-So 25k covers about 6-7 designs. Before the library, a scene drawn from scratch cost about 8k and took 20-30 s. Most of the cost is now the fixed instructions sent with each call (input).
+So 25k covers about 4 designs. Before the library, a scene without the description cost about 8k and took 20-30 s. Most of the cost is now the fixed instructions sent with every call (input), so prompt caching would be the next big saving.
 
 - The 25k cap is hard. Before each Sonnet call the worst case is reserved (a deliberately high input estimate plus the maximum output), so a call can't go over the limit. If the worst case doesn't fit, it uses Haiku.
 - The count is saved in `visualizer/usage.json` (not in git), so it survives restarts.
@@ -62,16 +80,20 @@ So 25k covers about 6-7 designs. Before the library, a scene drawn from scratch 
 ## What the model gets and returns
 
 - **Gets:**
+  - the request text, mission goal and notes;
   - the form factor and envelope;
-  - one line per physical item to place (four solar panels are four refs), with the library size and a note on which way the part faces, or `"draw": true` if the part isn't in the library;
+  - one line per physical item to place (four solar panels are four refs), with the designer's reason for the pick and the library size plus which way the part faces, or `"draw": true` if the part isn't in the library;
+  - the names of extras drawn for earlier requests;
   - on an edit, the bounding boxes of the parts already placed.
 - **Returns:** structured JSON (`SCENE_SCHEMA` in `generator.py`):
-  - a placement per part;
+  - a placement and a one-line role per part;
   - shapes only for parts it had to draw;
+  - the description (overview and layout);
+  - any extras, plus refs of earlier extras to drop;
   - a fit verdict (fits / tight / doesn't fit) with a reason;
   - a one-line summary.
 - **Server side:**
-  - library parts are expanded, and model-drawn parts are placed;
+  - library parts are expanded, and model-drawn parts are placed and saved to `parts/generated/`;
   - exploded-view offsets are worked out from where each part sits (`placement.auto_explode`);
   - `scene.repair` drops unknown refs, fills missing parts from the rule-based layout, clamps numbers and notes inside parts that stick out of the frame.
 
@@ -95,9 +117,11 @@ sat-parser/.venv/bin/python -m pytest visualizer/tests   # offline: fake client 
 
 | File | What it does |
 |---|---|
-| `library.py` | The part library: a ready-made drawing of each part |
+| `library.py` | Looks up a part's drawing (Opus first, then generated) and saves new generated drawings |
+| `parts/opus/drawings.py` | The parts Opus drew |
+| `parts/generated/` | Parts Sonnet/Haiku drew at runtime, one JSON file each, for Opus to review |
 | `placement.py` | Turning and moving library parts into place; exploded-view offsets |
-| `generator.py` | Prompt, schema, model choice, edits, fallbacks, cache |
+| `generator.py` | Prompt, schema, model choice, description and extras, edits, fallbacks, cache |
 | `budget.py` | The Sonnet token budget (hard cap, saved to `usage.json`) |
 | `scene.py` | Scene format, repair pass, and the rule-based layout and volume check |
 | `__main__.py` | Command line |

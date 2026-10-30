@@ -118,7 +118,8 @@ def repair(raw: dict, design: dict) -> tuple[dict, list[str]]:
         info = want[ref]
         parts.append({"ref": ref, "part_index": info["part_index"],
                       "label": _label(info), "explode": explode, "shapes": shapes,
-                      **({"place": p["place"]} if isinstance(p.get("place"), dict) else {})})
+                      **({"place": p["place"]} if isinstance(p.get("place"), dict) else {}),
+                      **({"role": str(p["role"])[:400]} if p.get("role") else {})})
 
     for ref, info in want.items():
         if ref not in seen:
@@ -156,8 +157,8 @@ def clean_shape(s: dict, env: list[float]) -> dict:
 
 def explode(scene: dict, design: dict) -> dict:
     """Set every part's exploded-view offset from where it sits (see placement.auto_explode)."""
-    auto_explode(scene["parts"], scene["envelope_mm"],
-                 lambda p: kind_of(design["parts"][p["part_index"]]) == "structure", SPREAD)
+    auto_explode(scene["parts"], scene["envelope_mm"],      # extras (part_index -1) are never the structure
+                 lambda p: p["part_index"] >= 0 and kind_of(design["parts"][p["part_index"]]) == "structure", SPREAD)
     return scene
 
 

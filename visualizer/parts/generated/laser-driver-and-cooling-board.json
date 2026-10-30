@@ -1,0 +1,67 @@
+{
+ "name": "Laser driver and cooling board",
+ "vendor": "AI-added",
+ "kind": "extra",
+ "mount": "stack",
+ "size": [
+  80.0,
+  80.0,
+  8.0
+ ],
+ "note": "drawn by claude-sonnet-5-5; own +z is up",
+ "purpose": "Drives the laser diode with steady current and carries a copper heat spreader to carry away waste heat.",
+ "mass_kg": 0.08,
+ "power_w": 1.0,
+ "estimate": true,
+ "drawn_by": "claude-sonnet-5-5",
+ "drawn_at": "2026-10-30 14:53",
+ "request": "Make a satellite with a laser beam",
+ "review": "Drawn by a smaller model at runtime. Opus: check the size and detail, redraw it in parts/opus/drawings.py if needed, then delete this file.",
+ "shapes": [
+  {
+   "kind": "box",
+   "center": [
+    0.0,
+    0.0,
+    -3.0
+   ],
+   "size": [
+    80.0,
+    80.0,
+    2.0
+   ],
+   "axis": "z",
+   "material": "pcb"
+  },
+  {
+   "kind": "box",
+   "center": [
+    0.0,
+    0.0,
+    1.0
+   ],
+   "size": [
+    40.0,
+    40.0,
+    6.0
+   ],
+   "axis": "z",
+   "material": "copper"
+  },
+  {
+   "kind": "box",
+   "center": [
+    25.0,
+    -20.0,
+    0.0
+   ],
+   "size": [
+    15.0,
+    15.0,
+    4.0
+   ],
+   "axis": "z",
+   "material": "black"
+  }
+ ]
+}

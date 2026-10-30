@@ -12,7 +12,6 @@ from unittest import mock
 
 from designer import run
 from visualizer import SceneGenerator, TokenBudget, default_scene, repair
-from visualizer import generator as gen_module
 from visualizer import library
 from visualizer.budget import HAIKU_MODEL, SONNET_MODEL
 from visualizer.placement import body_size, place
@@ -23,14 +22,24 @@ def design(idea="3U camera cubesat"):
     return run(idea, use_llm=False).data["design"]
 
 
-def placements_for(d, refs=None):
-    """What a well-behaved model returns: the rule-based layout's placements, shapes left to the library."""
+def placements_for(d, refs=None, extras=(), drop=()):
+    """What a well-behaved model returns: the rule-based layout's placements (shapes left to the
+    library), a role per part, a description, and any extras."""
     out = []
     for p in default_scene(d)["parts"]:
         if refs is None or p["ref"] in refs:
             m = p["place"]
-            out.append({"ref": p["ref"], "pos": m["pos"], "up": m["up"], "spin": str(m["spin"]), "shapes": []})
-    return {"summary": "test layout", "fit": {"verdict": "fits", "note": "ok"}, "parts": out}
+            out.append({"ref": p["ref"], "role": f"role of {p['label']}", "pos": m["pos"], "up": m["up"],
+                        "spin": str(m["spin"]), "shapes": []})
+    return {"summary": "test layout", "fit": {"verdict": "fits", "note": "ok"},
+            "description": {"overview": "how it works", "layout": "why it fits"},
+            "parts": out, "extras": list(extras), "drop_extras": list(drop)}
+
+
+LASER = {"name": "Pulsed laser emitter", "purpose": "Fires a low-power laser for the demo.", "mass_kg": 0.4, "power_w": 12,
+         "pos": [0, 0, 60], "up": "+z", "spin": "0",
+         "shapes": [{"k": "box", "c": [0, 0, 0], "s": [60, 60, 30], "a": "z", "m": "black"},
+                    {"k": "cylinder", "c": [0, 0, 20], "s": [20, 20, 10], "a": "z", "m": "glass"}]}
 
 
 class FakeClient:
@@ -39,6 +48,7 @@ class FakeClient:
 
     def __init__(self, out_tokens=1200, script=None):
         self.out_tokens, self.script, self.calls = out_tokens, script or {}, []
+        self.extras, self.drop = [], []     # what the next replies add / remove
         self.messages = self
 
     def create(self, **kw):
@@ -49,7 +59,7 @@ class FakeClient:
         prompt = kw["messages"][0]["content"]
         rows = json.loads(prompt.rsplit("\n", 1)[-1])             # the "place these" list is the last line
         d = self.design_for(prompt)
-        text = "" if how == "truncate" else json.dumps(placements_for(d, {r["ref"] for r in rows}))
+        text = "" if how == "truncate" else json.dumps(placements_for(d, {r["ref"] for r in rows}, self.extras, self.drop))
         return SimpleNamespace(stop_reason="max_tokens" if how == "truncate" else "end_turn",
                                usage=SimpleNamespace(input_tokens=3000, output_tokens=min(self.out_tokens, kw["max_tokens"])),
                                content=[SimpleNamespace(type="text", text=text)])
@@ -61,16 +71,20 @@ class Base(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.budget = TokenBudget(Path(self.tmp.name) / "usage.json", limit=25000)
+        self.generated = Path(self.tmp.name) / "generated"      # never write into the real library
+        self.real_generated = library.GENERATED_DIR
+        library.set_generated_dir(self.generated)
         self.d = design()
 
     def tearDown(self):
+        library.set_generated_dir(self.real_generated)
         self.tmp.cleanup()
 
     def gen(self, designs=None, **kw):
         client = FakeClient(**kw)
         designs = designs or [self.d]
         client.design_for = lambda prompt: next(
-            (d for d in reversed(designs) if f"Mission: {d['name']}" in prompt and d["form_factor"] in prompt), designs[-1])
+            (d for d in reversed(designs) if f"Satellite: {d['name']}" in prompt and d["form_factor"] in prompt), designs[-1])
         return SceneGenerator(self.budget, client=client), client
 
 
@@ -157,23 +171,96 @@ class ModelPlacesLibraryPartsTest(Base):
         out = g.generate(self.d)
         self.assertEqual((out["source"], out["mode"], out["drawn"]), ("sonnet", "full", 0))
         call = client.calls[0]
-        self.assertNotIn("draw", call["system"].split("Most parts")[0])        # no drawing guide needed
         rows = json.loads(call["messages"][0]["content"].rsplit("\n", 1)[-1])
         self.assertTrue(all("library" in r for r in rows))
         # The scene has the library's full detail even though the model sent no shapes.
         want = sum(len(p["shapes"]) for p in default_scene(self.d)["parts"])
         self.assertEqual(sum(len(p["shapes"]) for p in out["scene"]["parts"]), want)
-        self.assertLess(call["max_tokens"], 3000)                              # placing is cheap
+        self.assertLess(call["max_tokens"], 8000)          # a ceiling; drawing everything used to allow 14000
 
-    def test_part_missing_from_the_library_gets_drawn(self):
+    def test_part_missing_from_the_library_gets_drawn_and_saved(self):
         real = library.lookup
-        with mock.patch.object(gen_module, "lookup", lambda name, mass=None: None if name == "OEM719" else real(name, mass)):
+        drawn = [{"k": "box", "c": [0, 0, 0], "s": [46, 71, 11], "a": "z", "m": "pcb"}]
+        with mock.patch.object(library, "lookup", lambda name, mass=None: None if name == "OEM719" else real(name, mass)):
             g, client = self.gen()
+            orig = client.create
+
+            def create(**kw):        # the model draws the missing part
+                resp = orig(**kw)
+                data = json.loads(resp.content[0].text)
+                for p in data["parts"]:
+                    if p["ref"] == "p4":
+                        p["shapes"] = drawn
+                resp.content[0].text = json.dumps(data)
+                return resp
+            client.create = create
             out = g.generate(self.d)
         self.assertEqual(out["drawn"], 1)
-        call = client.calls[0]
-        self.assertIn('"draw":true', call["messages"][0]["content"])
-        self.assertIn("not in the library", call["system"])
+        self.assertIn('"draw":true', client.calls[0]["messages"][0]["content"])
+        self.assertEqual(out["saved"], ["OEM719"])
+        saved = json.loads((self.generated / "oem719.json").read_text())
+        self.assertEqual((saved["kind"], saved["drawn_by"], saved["vendor"]), ("catalog", SONNET_MODEL, "NovAtel"))
+
+
+class DescriptionAndExtrasTest(Base):
+    def test_description_and_roles(self):
+        g, client = self.gen()
+        out = g.generate(self.d, request={"text": "3U camera cubesat", "goal": "Image crops", "notes": ""})
+        s = out["scene"]
+        self.assertEqual(s["description"], {"overview": "how it works", "layout": "why it fits"})
+        self.assertTrue(all(p.get("role") for p in s["parts"]))
+        prompt = client.calls[0]["messages"][0]["content"]
+        self.assertIn('Request: "3U camera cubesat"', prompt)
+        self.assertIn('"why":', prompt)                           # the designer's reasons are passed on
+
+    def test_unusual_request_gets_extras_saved_apart_and_reused(self):
+        g, client = self.gen()
+        client.extras = [LASER]
+        req = {"text": "3U cubesat with a laser beam", "goal": "", "notes": "laser beam"}
+        out = g.generate(self.d, request=req)
+        extra = [p for p in out["scene"]["parts"] if p.get("extra")]
+        self.assertEqual(len(extra), 1)
+        self.assertEqual((extra[0]["ref"], extra[0]["part_index"]), ("x1", -1))
+        self.assertEqual(extra[0]["extra"]["mass_kg"], 0.4)
+        self.assertEqual(out["saved"], ["Pulsed laser emitter"])
+        f = self.generated / "pulsed-laser-emitter.json"
+        self.assertEqual(json.loads(f.read_text())["kind"], "extra")
+        self.assertEqual(library.lookup("Pulsed laser emitter")["source"], "generated")
+        # Next laser request: the model is told about it and can reuse it by name without drawing.
+        client.extras = [{**LASER, "shapes": []}]
+        again = g.generate(design("6U camera cubesat"), request=req)
+        self.assertIn("Pulsed laser emitter", client.calls[1]["messages"][0]["content"])
+        x = [p for p in again["scene"]["parts"] if p.get("extra")][0]
+        self.assertEqual((x["extra"]["drawing"], again["saved"]), ("library", []))
+        self.assertEqual(len(x["shapes"]), 2)
+
+    def test_opus_drawings_win_over_generated(self):
+        library.save_generated("OEM719", [{"kind": "box", "center": [0, 0, 0], "size": [1, 1, 1], "axis": "z", "material": "pcb"}],
+                               kind="catalog", model="test")
+        self.assertEqual(library.lookup("OEM719")["source"], "opus")
+        self.assertFalse((self.generated / "oem719.json").exists())
+
+    def test_edit_keeps_extras_and_can_drop_them(self):
+        first = design("3U camera at 550 km for 2 years")
+        second = design("3U camera at 300 km for 3 years")
+        g, client = self.gen(designs=[first, second])
+        client.extras = [LASER]
+        req = {"text": "laser cubesat", "goal": "", "notes": "laser"}
+        a = g.generate(first, request=req)
+        client.extras = []
+        b = g.generate(second, previous={"design": first, "scene": a["scene"], "source": a["source"]},
+                       request={**req, "text": "fly at 300 km for 3 years"})
+        self.assertEqual(b["mode"], "edit")
+        self.assertEqual([p["ref"] for p in b["scene"]["parts"] if p.get("extra")], ["x1"])
+        self.assertIn('"ref":"x1"', client.calls[1]["messages"][0]["content"])
+        client.drop = ["x1"]
+        c = g.generate(second, previous={"design": second, "scene": b["scene"], "source": b["source"]},
+                       request={**req, "text": "remove the laser", "notes": ""})
+        self.assertFalse(any(p.get("extra") for p in c["scene"]["parts"]))
+
+    def test_goal_and_notes_are_part_of_the_cache_key(self):
+        a = SceneGenerator.cache_key(self.d, {"goal": "Image crops", "notes": ""})
+        self.assertNotEqual(a, SceneGenerator.cache_key(self.d, {"goal": "Image crops", "notes": "laser"}))
 
 
 class EditTest(Base):

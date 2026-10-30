@@ -18,6 +18,8 @@ On top of the original layout the page adds a **3D model** (in place of the stac
 - The 3D model shows a quick rule-based layout first, then the model's drawing. It has explode/assemble, a spread slider, part labels and hover details, and hovering a table row highlights its part.
 - The Sonnet token meter is shown in the corner of the 3D view.
 - The starter design never spends tokens; click **Draw with AI** to have it drawn.
+- Under the 3D model, **How it works** shows the model's explanation: an overview, what each part does and why it was picked, and why the layout fits.
+- Parts the model added for an unusual request (a laser, say) are marked "added for your request" in the 3D labels, in How it works, and as extra rows in the Subsystems table. They're estimates and aren't counted in the totals.
 
 > Sections 2-6 below describe the earlier standalone version (built-in parts tables, demo parser, Model settings). The page no longer has those; the server does that work now.
 
