@@ -353,7 +353,7 @@ const viewer = await (async () => {
   setEdgeColor();
   matchMedia("(prefers-color-scheme: dark)").addEventListener("change", setEdgeColor);
   addEventListener("themechange", setEdgeColor);
-  
+
   let root = null, groups = [], t = 0, target = 0, labelsOn = true, hovered = -1, onHover = () => {};
   let frames = null, autoFrame = true;     // camera framing for assembled (0) and exploded (1)
   canvas.addEventListener("wheel", () => { autoFrame = false; }, { passive: true });
@@ -700,6 +700,7 @@ function renderBudget(t){
 }
 
 function showDesign(out, drawWithModel){
+  window.__cubesat = out;
   current = out;
   render(out.budget);
   renderPlan(out.build_plan);
@@ -1033,7 +1034,7 @@ if (params.get("idea")) {
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
-const MU = 398600.4418, RE = 6371, VIS = 3, ORBIT_S = 16, L0 = 3.2, ASCENT = 9;   // VIS: altitude exaggeration; ORBIT_S: seconds per orbit on screen
+const MU = 398600.4418, RE = 6371, VIS = 3, L0 = 3.2;
 
 const css = document.createElement("style");
 css.textContent = `
@@ -1057,10 +1058,12 @@ const blob = (g, x, y, r) => { g.beginPath(); for (let k = 0; k < 10; k++) { con
 
 function launch() {
   if (document.getElementById("lo")) return;
-  const s = (window.__cubesat || {}).spec || {};
+  const c = window.__cubesat || {}, s = c.spec || {}, b = c.budget || {}, plan = c.build_plan || {};
   const alt = +s.altitude_km || 550, units = +s.size_u || 6, sso = s.orbit === "SSO", years = +s.lifetime_years || 1;
   const a = RE + alt, T = 2 * Math.PI * Math.sqrt(a ** 3 / MU), vel = Math.sqrt(MU / a), incDeg = sso ? 98 : 51.6;
-  const R = 6.371, ro = R + alt / 1000 * VIS, speedup = T / ORBIT_S;
+  const R = 6.371, ro = R + alt / 1000 * VIS;
+  const ORBIT_S = Math.min(26, Math.max(9, 16 * T / 5700)), ASCENT = 6 + alt / 150, speedup = T / ORBIT_S;
+  const eclMin = T * Math.asin(RE / a) / Math.PI / 60;
 
   const host = document.createElement("div"); host.id = "lo";
   host.innerHTML = `<canvas></canvas><div class="hud"><div class="t">${units}U ${s.payload || "CubeSat"}</div>
