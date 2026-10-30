@@ -123,6 +123,7 @@ svg text{font-family:var(--sans);font-size:12.5px;fill:var(--fg)}
   .chat{height:70vh}
   .dash{overflow:visible}
 }
+
 @media (prefers-reduced-motion:reduce){.meter i{transition:none}}
 </style>
 </head>
@@ -210,6 +211,11 @@ svg text{font-family:var(--sans);font-size:12.5px;fill:var(--fg)}
 
 /* ---------- Parts table (replace with your SOA data) ---------- */
 const FORMS = {
+  /*1u-2u can be replaced data not accurate
+  "1U" : { u:1,  maxMass:2,  gen:6,  structure:[0.6,0,25],  power:[1.1,0,80]  },
+  "1.5U" : { u:1.5,  maxMass:3,  gen:6,  structure:[0.6,0,25],  power:[1.1,0,80]  },
+  "2U" : { u:2,  maxMass:4,  gen:6,  structure:[0.6,0,25],  power:[1.1,0,80]  },
+  */
   "3U":  { u:3,  maxMass:4,  gen:6,  structure:[0.6,0,25],  power:[1.1,0,80]  },
   "6U":  { u:6,  maxMass:12, gen:14, structure:[1.2,0,40],  power:[2.1,0,120] },
   "12U": { u:12, maxMass:24, gen:30, structure:[2.4,0,70],  power:[3.8,0,190] }
@@ -275,6 +281,7 @@ function demoParse(text, prev){
   if (yrs) s.years = +yrs[1];
   return s;
 }
+
 function demoReply(b){
   const lines = [];
   lines.push(b.massState==="ok" ? "Here is a starting design. Mass fits with room to spare." : b.massState==="tight" ? "Here is a starting design. Mass is close to the limit." : "This design is over the mass limit.");
