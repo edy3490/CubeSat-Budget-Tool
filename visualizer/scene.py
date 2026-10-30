@@ -15,12 +15,17 @@ from __future__ import annotations
 
 import math
 
+from .library import lookup
+from .placement import auto_explode, place
+
 KINDS = ("box", "cylinder")
 AXES = ("x", "y", "z")
 MATERIALS = ("aluminum", "black", "pcb", "solar", "gold", "glass", "copper", "white", "titanium", "kapton")
 
-MAX_SHAPES_PER_PART = 22
-MAX_SHAPES_TOTAL = 260
+MAX_SHAPES_PER_PART = 60    # library parts are detailed; the 12U frame alone is 52 shapes
+MAX_SHAPES_TOTAL = 900
+GAP_MM = 1            # default layout: space between stacked parts
+BAFFLE_MM = 12        # a camera's baffle may stick out of the Earth-facing face by this much
 SPREAD = 1.6         # default layout: the exploded stack is (1 + SPREAD) times as long
 REACH_MM = 900       # nothing may sit further than this outside the structure
 MIN_SIZE_MM = 0.5
@@ -92,10 +97,6 @@ def repair(raw: dict, design: dict) -> tuple[dict, list[str]]:
     fallback = {p["ref"]: p for p in default_scene(design)["parts"]}
     notes: list[str] = []
 
-    lo_c = [-(e / 2 + REACH_MM) for e in env]
-    hi_c = [e / 2 + REACH_MM for e in env]
-    max_s = [e + 2 * REACH_MM for e in env]
-
     parts, seen, total = [], set(), 0
     for p in raw.get("parts") or []:
         if not isinstance(p, dict):
@@ -108,15 +109,7 @@ def repair(raw: dict, design: dict) -> tuple[dict, list[str]]:
         for s in (p.get("shapes") or [])[:MAX_SHAPES_PER_PART]:
             if not isinstance(s, dict) or total >= MAX_SHAPES_TOTAL:
                 continue
-            # The model writes short keys (k, c, s, a, m); long names are accepted too.
-            kind, axis, mat = s.get("k", s.get("kind")), s.get("a", s.get("axis")), s.get("m", s.get("material"))
-            shapes.append({
-                "kind": kind if kind in KINDS else "box",
-                "center": _vec(s.get("c", s.get("center")), [0, 0, 0], lo_c, hi_c),
-                "size": _vec(s.get("s", s.get("size")), [10, 10, 10], [MIN_SIZE_MM] * 3, max_s),
-                "axis": axis if axis in AXES else "z",
-                "material": mat if mat in MATERIALS else "aluminum",
-            })
+            shapes.append(clean_shape(s, env))
             total += 1
         if not shapes:
             notes.append(f"{ref}: no usable shapes, used the default layout")
@@ -124,7 +117,8 @@ def repair(raw: dict, design: dict) -> tuple[dict, list[str]]:
         explode = _vec(p.get("explode"), fallback[ref]["explode"], [-REACH_MM] * 3, [REACH_MM] * 3)
         info = want[ref]
         parts.append({"ref": ref, "part_index": info["part_index"],
-                      "label": _label(info), "explode": explode, "shapes": shapes})
+                      "label": _label(info), "explode": explode, "shapes": shapes,
+                      **({"place": p["place"]} if isinstance(p.get("place"), dict) else {})})
 
     for ref, info in want.items():
         if ref not in seen:
@@ -144,6 +138,27 @@ def repair(raw: dict, design: dict) -> tuple[dict, list[str]]:
         "fit": {"verdict": verdict, "note": str(fit.get("note") or "")[:400]},
         "parts": parts,
     }, notes
+
+
+def clean_shape(s: dict, env: list[float]) -> dict:
+    """One shape with valid kind, axis and material and numbers clamped to a sane range.
+    The model writes short keys (k, c, s, a, m); long names are accepted too."""
+    kind, axis, mat = s.get("k", s.get("kind")), s.get("a", s.get("axis")), s.get("m", s.get("material"))
+    return {
+        "kind": kind if kind in KINDS else "box",
+        "center": _vec(s.get("c", s.get("center")), [0, 0, 0],
+                       [-(e / 2 + REACH_MM) for e in env], [e / 2 + REACH_MM for e in env]),
+        "size": _vec(s.get("s", s.get("size")), [10, 10, 10], [MIN_SIZE_MM] * 3, [e + 2 * REACH_MM for e in env]),
+        "axis": axis if axis in AXES else "z",
+        "material": mat if mat in MATERIALS else "aluminum",
+    }
+
+
+def explode(scene: dict, design: dict) -> dict:
+    """Set every part's exploded-view offset from where it sits (see placement.auto_explode)."""
+    auto_explode(scene["parts"], scene["envelope_mm"],
+                 lambda p: kind_of(design["parts"][p["part_index"]]) == "structure", SPREAD)
+    return scene
 
 
 def _label(info: dict) -> str:
@@ -249,122 +264,146 @@ def _columns(env: list[float]) -> list[tuple[float, float, float, float]]:
 
 
 def default_scene(design: dict) -> dict:
-    """A plain, rule-based layout. Shown instantly, and used when no model is available."""
+    """Rule-based layout from the part library. Shown instantly, and used when no model is available.
+
+    Parts missing from the library fall back to simple generic shapes (_module).
+    """
     env = envelope(design)
     X, Y, Z = env
     items = instances(design)
     parts = []
 
-    def add(info, shapes, explode):
+    def add(info, shapes, meta=None):
         parts.append({"ref": info["ref"], "part_index": info["part_index"], "label": _label(info),
-                      "explode": [round(e, 1) for e in explode], "shapes": shapes})
+                      "explode": [0, 0, 0], "shapes": shapes, **({"place": meta} if meta else {})})
 
-    # Internals, packed into columns from the bottom up; thrusters from the top down.
+    def put(info, entry, pos, up="+z", spin=0):
+        pos = [round(v, 1) for v in pos]
+        add(info, place(entry["shapes"], pos, up, spin), {"pos": pos, "up": up, "spin": spin})
+
+    def entry_of(info):
+        return lookup(info["part"]["part"], info["part"]["unit_mass_kg"])
+
+    # Inside: packed into columns from the bottom up; thrusters from the top down. Boards carry
+    # their own standoffs, so parts sit 1 mm apart; a camera's baffle goes through the bottom face.
     cols = _columns(env)
-    bottom = [-Z / 2 + 6] * len(cols)
-    top = [Z / 2 - 6] * len(cols)
+    floor, ceiling = -Z / 2 + 6, Z / 2 - 6
+    bottom = [floor] * len(cols)
+    start = [floor] * len(cols)              # lower for a column whose camera pokes through the bottom
+    top = [ceiling] * len(cols)
     order = {"imager": 0, "payload_box": 0, "adcs": 1, "board": 2, "battery": 3}
-    inside = sorted((i for i in items if kind_of(i["part"]) in order),
-                    key=lambda i: order[kind_of(i["part"])])
+    inside = sorted((i for i in items if kind_of(i["part"]) in order), key=lambda i: order[kind_of(i["part"])])
     for info in inside + [i for i in items if kind_of(i["part"]) == "thruster"]:
-        k = kind_of(info["part"])
-        h = _height_mm(info["part"], k)
+        k, e = kind_of(info["part"]), entry_of(info)
+        h = e["size"][2] if e else _height_mm(info["part"], k)
         if k == "thruster":
             c = max(range(len(cols)), key=lambda j: top[j])
             cz = top[c] - h / 2
-            top[c] -= h + 3
+            top[c] -= h + GAP_MM
         else:
             c = min(range(len(cols)), key=lambda j: bottom[j])
+            if k == "imager" and bottom[c] == floor:
+                bottom[c] = start[c] = -Z / 2 - BAFFLE_MM
             cz = bottom[c] + h / 2
-            bottom[c] += h + 3
+            bottom[c] += h + GAP_MM
         cx, cy, w, d = cols[c]
-        shapes = _module(k, info["part"], cx, cy, cz, w, d, h, Z)
-        # Exploded: the stack spreads out along the rails.
-        add(info, shapes, (0, 0, cz * SPREAD))
+        if e:
+            put(info, e, (cx, cy, cz))
+        else:
+            add(info, _module(k, info["part"], cx, cy, cz, w, d, h, Z))
 
-    # Structure: corner rails with feet, end frames, ribs at each 1U, and stack rods.
     for info in (i for i in items if kind_of(i["part"]) == "structure"):
-        r = 8.5
-        shapes = [_box((sx * (X / 2 - r / 2), sy * (Y / 2 - r / 2), 0), (r, r, Z - 13), "aluminum")
-                  for sx in (-1, 1) for sy in (-1, 1)]
-        shapes += [_box((sx * (X / 2 - r / 2), sy * (Y / 2 - r / 2), ez * (Z / 2 - 3.3)), (r - 1, r - 1, 6.5), "black")
-                   for sx in (-1, 1) for sy in (-1, 1) for ez in (-1, 1)]            # rail feet
-        ribs = [ez * (Z / 2 - 10) for ez in (-1, 1)] + [-Z / 2 + 113.5 * n for n in range(1, int(Z // 113.5))]
-        for zc in ribs:
-            shapes += [_box((0, sy * (Y / 2 - 3), zc), (X - 2 * r, 5, 5), "aluminum") for sy in (-1, 1)]
-            shapes += [_box((sx * (X / 2 - 3), 0, zc), (5, Y - 2 * r, 5), "aluminum") for sx in (-1, 1)]
-        for cx, cy, w, d in _columns(env):                                          # stack rods
-            shapes += [_box((cx + sx * (w / 2 - 4), cy + sy * (d / 2 - 4), 0), (3, 3, Z - 24), "titanium", "cylinder")
-                       for sx in (-1, 1) for sy in (-1, 1)]
-        add(info, shapes, (0, 0, 0))
+        e = entry_of(info)
+        if e:
+            put(info, e, (0, 0, 0))
+        else:
+            r = 8.5
+            add(info, [_box((sx * (X / 2 - r / 2), sy * (Y / 2 - r / 2), 0), (r, r, Z), "aluminum")
+                       for sx in (-1, 1) for sy in (-1, 1)])
 
-    # Solar panels: body panels on the long faces; deployables as wings off the top end.
+    # Solar: body panels on the long faces; panels too wide for a face, and deployables, become
+    # wings at the top end reaching outward.
     faces = [(1, 0), (-1, 0), (0, 1), (0, -1)]
-    body = [i for i in items if kind_of(i["part"]) == "solar_body"]
-    wings = [i for i in items if kind_of(i["part"]) == "solar_deployed"]
-    for n, info in enumerate(body):
-        fx, fy = faces[n % 4]
-        layer = n // 4
-        off = 1.5 + layer * 3
-        if fx:   # substrate, cells on the outside
-            shapes = [_box((fx * (X / 2 + off), 0, 0), (1.6, Y - 4, Z - 8), "pcb"),
-                      _box((fx * (X / 2 + off + 1.2), 0, 0), (0.8, Y - 10, Z - 16), "solar")]
+    face_up = {(1, 0): "+x", (-1, 0): "-x", (0, 1): "+y", (0, -1): "-y"}
+    wing_spin = {(1, 0): 270, (-1, 0): 90, (0, 1): 0, (0, -1): 180}     # turns own +y to point outward
+    layer = {f: 0.0 for f in faces}
+    wings = []
+    for n, info in enumerate(i for i in items if kind_of(i["part"]) == "solar_body"):
+        face, e = faces[n % 4], entry_of(info)
+        face_width = Y if face[0] else X
+        if e and e["size"][0] > face_width + 10:
+            wings.append((face, info))
+            continue
+        t = e["size"][2] if e else 2
+        off = (X if face[0] else Y) / 2 + layer[face] + t / 2 + 0.5
+        layer[face] += t + 0.5
+        pos = (face[0] * off, face[1] * off, 0)
+        if e:
+            put(info, e, pos, face_up[face])
         else:
-            shapes = [_box((0, fy * (Y / 2 + off), 0), (X - 4, 1.6, Z - 8), "pcb"),
-                      _box((0, fy * (Y / 2 + off + 1.2), 0), (X - 10, 0.8, Z - 16), "solar")]
-        add(info, shapes, (fx * 110, fy * 110, 0))
-    for n, info in enumerate(wings):
-        fx, fy = faces[n % 4]
-        panels = 2 if "double" in info["part"]["part"].lower() else 1
-        span = (Z - 10) * panels
-        if fx:
-            shapes = [_box((fx * (X / 2 + 4 + span / 2), 0, Z / 2 - 4), (span, Y - 6, 1.6), "pcb"),
-                      _box((fx * (X / 2 + 4 + span / 2), 0, Z / 2 - 2.8), (span - 6, Y - 12, 0.8), "solar")]
-            shapes += [_box((fx * (X / 2 + 3), hy * (Y / 2 - 15), Z / 2 - 4), (6, 14, 6), "aluminum", "cylinder", "y") for hy in (-1, 1)]
+            add(info, [_box(pos, (t, Y - 4, Z - 8) if face[0] else (X - 4, t, Z - 8), "solar")])
+    wings += [(faces[n % 4], info) for n, info in enumerate(i for i in items if kind_of(i["part"]) == "solar_deployed")]
+    for face, info in wings:
+        e = entry_of(info)
+        length, t = (e["size"][1], e["size"][2]) if e else (Z - 10, 2)
+        reach = (X if face[0] else Y) / 2 + 4 + length / 2
+        pos = (face[0] * reach, face[1] * reach, Z / 2 - t / 2)
+        if e:
+            put(info, e, pos, "+z", wing_spin[face])
         else:
-            shapes = [_box((0, fy * (Y / 2 + 4 + span / 2), Z / 2 - 4), (X - 6, span, 1.6), "pcb"),
-                      _box((0, fy * (Y / 2 + 4 + span / 2), Z / 2 - 2.8), (X - 12, span - 6, 0.8), "solar")]
-            shapes += [_box((hx * (X / 2 - 15), fy * (Y / 2 + 3), Z / 2 - 4), (14, 6, 6), "aluminum", "cylinder", "x") for hx in (-1, 1)]
-        add(info, shapes, (fx * 80, fy * 80, 60))
+            add(info, [_box(pos, (length, Y - 6, t) if face[0] else (X - 6, length, t), "solar")])
 
-    # Antennas.
-    for info in (i for i in items if kind_of(i["part"]).startswith(("whip", "patch"))):
-        k = kind_of(info["part"])
-        if k == "whip_antenna":
-            zc = Z / 2 + 4
-            whip = 170
-            shapes = [_box((0, 0, zc), (min(X, 98), min(Y, 98), 7), "black"),
-                      _box((0, 0, zc + 3.8), (min(X, 98) - 30, min(Y, 98) - 30, 0.6), "pcb")]
-            shapes += [_box((sx * 40, 0, zc + 4.5), (8, 16, 3), "white") for sx in (-1, 1)]       # burn-wire housings
-            shapes += [_box((0, sy * 40, zc + 4.5), (16, 8, 3), "white") for sy in (-1, 1)]
-            shapes += [_box((sx * (49 + whip / 2), 0, zc), (whip, 3, 0.6), "aluminum") for sx in (-1, 1)]
-            shapes += [_box((0, sy * (49 + whip / 2), zc), (3, whip, 0.6), "aluminum") for sy in (-1, 1)]
-            add(info, shapes, (0, 0, Z / 2 * SPREAD + 70))
-            parts[-1]["_whip"] = True
-        elif k == "patch_zenith":
-            # Sits on top of the UHF antenna module at the zenith end.
-            shapes = [_box((X / 4, Y / 4, Z / 2 + 11.5), (30, 30, 4), "copper"),
-                      _box((X / 4, Y / 4, Z / 2 + 8.8), (36, 36, 1.6), "white")]
-            add(info, shapes, (0, 0, Z / 2 * SPREAD + 130))
+    # Antennas: UHF modules on the ends (top first), GNSS patch facing zenith, downlink patch on
+    # the -y side near the Earth-facing end (the end face holds the camera lens).
+    top_level = Z / 2
+    whips = [i for i in items if kind_of(i["part"]) == "whip_antenna"]
+    for n, info in enumerate(whips):
+        e = entry_of(info)
+        h = e["size"][2] if e else 7
+        up = "+z" if n == 0 else "-z"
+        zc = (Z / 2 + h / 2) if n == 0 else -(Z / 2 + h / 2)
+        if e:
+            put(info, e, (0, 0, zc), up)
         else:
-            # Downlink patch on the -y side near the Earth-facing end (the end face holds the lens).
-            sz = 60 if "4x4" in info["part"]["part"] else 45
-            zc = -Z / 2 + sz / 2 + 8
-            shapes = [_box((0, -(Y / 2 + 4.6), zc), (sz + 4, 1.6, sz + 4), "white"),
-                      _box((0, -(Y / 2 + 6.4), zc), (sz, 2, sz), "copper")]
-            add(info, shapes, (0, -150, zc * SPREAD))
+            add(info, [_box((0, 0, zc), (min(X, 98), min(Y, 98), h), "black")])
+        if n == 0:
+            top_level = Z / 2 + h
+    for info in (i for i in items if kind_of(i["part"]) == "patch_zenith"):
+        e = entry_of(info)
+        h = e["size"][2] if e else 4
+        x, y = X / 4, Y / 4
+        on_antenna = whips and abs(x) + 20 <= 49 and abs(y) + 20 <= 49
+        zc = (top_level if on_antenna else Z / 2) + h / 2
+        if e:
+            put(info, e, (x, y, zc))
+        else:
+            add(info, [_box((x, y, zc), (30, 30, h), "copper")])
+    for info in (i for i in items if kind_of(i["part"]) == "patch_nadir"):
+        e = entry_of(info)
+        h, side = (e["size"][2], e["size"][1]) if e else (2, 45)
+        yc = -(Y / 2 + layer[(0, -1)] + h / 2 + 1)
+        zc = -Z / 2 + side / 2 + 8
+        if e:
+            put(info, e, (0, yc, zc), "-y")
+        else:
+            add(info, [_box((0, yc, zc), (side, h, side), "copper")])
 
-    # Two whip antennas (command + relay): put the second one on the bottom end.
-    whips = [p for p in parts if p.pop("_whip", False)]
-    for p in whips[1:]:
-        for s in p["shapes"]:     # mirror it onto the bottom end
-            s["center"][2] = -s["center"][2]
-        p["explode"][2] = -(Z / 2 * SPREAD + 70)
+    # Volume check: does the fullest column's stack fit between the end frames?
+    use = [(bottom[j] - start[j] + ceiling - top[j] - GAP_MM, ceiling - start[j]) for j in range(len(cols))]
+    need, room = max(use, key=lambda u: u[0] / u[1])
+    # Within 5% over still counts as tight: real stacks can sit closer than these drawings.
+    verdict = "does_not_fit" if need > room * 1.05 else "tight" if need > room * 0.92 else "fits"
+    fit_note = f"Stacked, the inside parts need about {need:.0f} mm and the frame has {room:.0f} mm"
+    if need > room:
+        fit_note += (f"; {need - room:.0f} mm over, so it only fits with closer board spacing than these drawings use"
+                     if verdict == "tight" else f"; {need - room:.0f} mm over")
+    fit_note += ". Sizes come from the part library (some are estimates)."
 
     parts.sort(key=lambda p: [i["ref"] for i in items].index(p["ref"]))
-    return {
+    scene = {
         "envelope_mm": env,
-        "summary": "Default layout: boards stacked along the rails, payload at the Earth-facing end.",
-        "fit": {"verdict": "unknown", "note": "The default layout uses rough size guesses; it doesn't check fit."},
+        "summary": "Rule-based layout: library parts stacked along the rails, payload at the Earth-facing end.",
+        "fit": {"verdict": verdict, "note": fit_note},
         "parts": parts,
     }
+    return explode(scene, design)

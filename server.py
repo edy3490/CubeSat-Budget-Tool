@@ -150,9 +150,9 @@ class State:
     def tokens(self) -> dict:
         return {**self.generator.budget.status(), "llm": self.use_llm}
 
-    def respond(self, r, llm_used: bool) -> dict:
+    def respond(self, r, llm_used: bool, previous_id: str | None = None) -> dict:
         """Package a designer Result in the page's response shape."""
-        design_id = self.put({"spec": r.spec.model_dump(), "design": r.data["design"]})
+        design_id = self.put({"spec": r.spec.model_dump(), "design": r.data["design"], "previous_id": previous_id})
         return {
             "reply": reply_text(r.data, llm_used),
             "spec": {"design_id": design_id, **r.spec.model_dump()},
@@ -263,20 +263,27 @@ class Handler(BaseHTTPRequestHandler):
         text = str(users[-1].get("content") or "").strip()[:MAX_IDEA_CHARS] if users else ""
         if not text:
             return self._error(400, "no user message")
-        previous = _previous_spec(self.state, body.get("spec"))
+        spec = body.get("spec")
+        previous = _previous_spec(self.state, spec)
+        previous_id = spec.get("design_id") if isinstance(spec, dict) and self.state.get(spec.get("design_id")) else None
         r = run(text, previous=previous, use_llm=None if self.state.use_llm else False)
         if r.data.get("off_topic"):
             return self._json(200, {
                 "reply": "That doesn't look like a satellite idea. Try something like: a 3U CubeSat that images crops from a polar orbit.",
                 "spec": body.get("spec") or {}, "off_topic": True})
-        self._json(200, self.state.respond(r, self.state.use_llm))
+        self._json(200, self.state.respond(r, self.state.use_llm, previous_id))
 
     def _visual(self, body: dict):
         entry = self.state.get(body.get("design_id"))
         if not entry:
             return self._error(404, "unknown design; make a new one")
+        # An edit of a design that was already drawn only needs its new or changed parts placed.
+        prev = self.state.get(entry.get("previous_id"))
+        previous = ({"design": prev["design"], "scene": prev["scene"], "source": prev["scene_source"]}
+                    if prev and prev.get("scene") else None)
         out = self.state.generator.generate(entry["design"], regenerate=bool(body.get("regenerate")),
-                                            use_llm=self.state.use_llm)
+                                            use_llm=self.state.use_llm, previous=previous)
+        entry["scene"], entry["scene_source"] = out["scene"], out["source"]
         self._json(200, out)
 
 
