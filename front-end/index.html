@@ -28,7 +28,26 @@ body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 var(--sans);pad
 .box button{width:42px;height:42px;border-radius:12px;border:0;background:linear-gradient(135deg,var(--accent2),var(--accent));color:#071018;font-size:18px;padding:0}
 .note{text-align:center;font-size:12px;color:var(--muted);margin-top:24px}
 /* workspace */
-header{display:flex;justify-content:space-between;align-items:center}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px}
+/* project picker */
+.hl-left{display:flex;align-items:center;gap:12px;min-width:0}
+.picker{position:relative;min-width:0}
+.picker>button{display:flex;align-items:center;gap:6px;max-width:min(360px,52vw)}
+.picker>button span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.picker>button i{font-style:normal;color:var(--muted);font-size:11px}
+.menu{position:absolute;top:calc(100% + 6px);left:0;z-index:10;width:min(340px,calc(100vw - 32px));max-height:60vh;overflow-y:auto;background:var(--pane);border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.18);padding:6px}
+.plist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.plist li{display:flex;align-items:center;border-radius:8px}
+.plist li:hover{background:var(--card)}
+.plist li.on{background:color-mix(in srgb,var(--accent) 14%,transparent)}
+.plist .open{flex:1;min-width:0;text-align:left;background:transparent;border:0;padding:8px 10px;display:flex;flex-direction:column}
+.plist .open b{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.plist .open small{color:var(--muted);font-size:12px}
+.plist .del{background:transparent;border:0;color:var(--muted);padding:6px 10px;font-size:16px;line-height:1}
+.plist .del:hover{color:var(--bad)}
+.pempty{color:var(--muted);font-size:13px;padding:10px;margin:0}
+.recent{margin-top:28px}.recent .label{text-align:center}
+.recent .plist{background:var(--pane);border:1px solid var(--line);border-radius:14px;padding:6px}
 h2{font-size:15px;margin:0}
 button{font:inherit;color:var(--fg);background:var(--card);border:1px solid var(--line);border-radius:8px;padding:6px 12px;cursor:pointer}
 button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
@@ -113,10 +132,19 @@ details ol{margin:6px 0 2px;padding-left:20px;font-size:13.5px;display:flex;flex
     <button type="submit" aria-label="Start">➤</button>
   </form>
   <div class="chips" id="landChips"></div>
+  <div class="recent" id="recent" hidden><p class="label">Recent projects</p><ul class="plist" id="recentList"></ul></div>
   <div class="note">Early-design estimates only. Verify before flight.</div>
 </section>
 <div class="app" id="ws" hidden>
-  <header><h2>CubeSat Budget Tool</h2><button id="resetBtn" type="button">New design</button></header>
+  <header>
+    <div class="hl-left"><h2>CubeSat Budget Tool</h2>
+      <div class="picker">
+        <button type="button" id="projBtn" aria-haspopup="true" aria-expanded="false" aria-controls="projMenu"><span id="projLabel">New design</span><i>▼</i></button>
+        <div class="menu" id="projMenu" hidden><ul class="plist" id="projList"></ul></div>
+      </div>
+    </div>
+    <button id="resetBtn" type="button">New design</button>
+  </header>
   <div class="main">
     <section class="pane chat" aria-label="Chat">
       <div class="log" id="log" aria-live="polite"></div>
@@ -619,13 +647,18 @@ function renderExtraRows(sceneData){
 
 async function requestVisual(regenerate, model){
   if (!current) return;
-  const seq = ++visualSeq, id = current.design_id;
+  const seq = ++visualSeq, id = current.design_id, proj = active;
   const badge = $("vBadge");
   badge.classList.add("busy");
   badge.innerHTML = `<b>${esc(modelName(model) || "The model")}</b> is ${regenerate ? "redrawing" : "drawing"} it…`;
   $("regenBtn").disabled = true;
   try {
     const v = await post("/api/visual", { design_id: id, regenerate });
+    // Keep the drawing with its project, even if the user has switched to another one meanwhile.
+    if (proj && proj.design?.design_id === id && v.source !== "default") {
+      proj.scene = { data: v.scene, info: { source: v.source, model: v.model, mode: v.mode, placed: v.placed, reused: v.reused } };
+      saveProjects();
+    }
     if (seq !== visualSeq || current?.design_id !== id) return;   // a newer design replaced this one
     showScene(v.scene, { source: v.source, model: v.model, mode: v.mode, placed: v.placed, reused: v.reused });
     renderBudget(v.budget);
@@ -720,10 +753,16 @@ function showError(err){
   addMsg("err", err.message + "." + hint);
 }
 
+function setBusy(on){
+  busy = on;
+  ["sendBtn", "projBtn", "resetBtn"].forEach(id => $(id).disabled = on);   // no switching mid-reply
+  if (on) closeMenu();
+}
+
 async function send(text){
   text = (text || "").trim();
   if (!text || busy) return;
-  busy = true; $("sendBtn").disabled = true;
+  setBusy(true);
   addMsg("user", text);
   history.push({role:"user", content:text});
   $("input").value = "";
@@ -734,16 +773,28 @@ async function send(text){
     addMsg("ai", out.reply || "Updated the design.");
     history.push({role:"assistant", content:out.reply || ""});
     if (out.spec) spec = out.spec;
+    if (out.budget && !active) {   // the first design of a chat makes it a project
+      active = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), title: text.slice(0, 80), history };
+      projects.unshift(active);
+    }
+    if (active) {
+      if (out.budget) { active.design = out; active.scene = null; }
+      active.spec = spec; active.updated = Date.now();
+      saveProjects(); renderProjects();
+    }
     if (out.budget) showDesign(out, true);
   }catch(err){
     typing.remove(); showError(err); history.pop();
   }
-  busy = false; $("sendBtn").disabled = false; $("input").focus();
+  setBusy(false); $("input").focus();
 }
 
+const INTRO = "Describe the mission and I'll build a mass, power and cost budget from real parts, a build plan and a 3D model. For example: a 6U CubeSat that images wildfires from low Earth orbit for 1 year.";
+
 async function reset(){
-  spec = {}; history = []; log.innerHTML = ""; visualSeq++;
-  addMsg("ai", "Describe the mission and I'll build a mass, power and cost budget from real parts, a build plan and a 3D model. For example: a 6U CubeSat that images wildfires from low Earth orbit for 1 year.");
+  spec = {}; history = []; active = null; log.innerHTML = ""; visualSeq++;
+  renderProjects();
+  addMsg("ai", INTRO);
   const loading = addMsg("ai typing", "Loading starter design...");
   try{
     const out = await post("/api/budget", {});
@@ -760,7 +811,87 @@ async function enter(text){
   await reset();
   await send(text);
 }
-function leave(){ $("ws").hidden = true; $("land").hidden = false; $("landInput").value = ""; $("landInput").focus(); }
+function leave(){
+  active = null; visualSeq++; closeMenu(); renderProjects();
+  $("ws").hidden = true; $("land").hidden = false; $("landInput").value = ""; $("landInput").focus();
+}
+
+/* ---------- saved projects (kept in this browser) ---------- */
+// A project: {id, title, updated, history, spec, design (last server response), scene (the model's drawing)}.
+const STORE = "cubesat.projects.v1";
+let projects = [], active = null;
+try { const a = JSON.parse(localStorage.getItem(STORE) || "[]"); if (Array.isArray(a)) projects = a.filter(p => p && p.id && Array.isArray(p.history)); } catch (e) {}
+
+function saveProjects(){
+  projects.sort((a, b) => (b.updated || 0) - (a.updated || 0));
+  for (;;) {
+    try { localStorage.setItem(STORE, JSON.stringify(projects)); return; }
+    catch (e) {
+      // Storage full: drop the oldest project that isn't open. Any other error: storage is off, keep them in memory.
+      const i = projects.findLastIndex(p => p !== active);
+      if (e?.name !== "QuotaExceededError" || i < 0) return;
+      projects.splice(i, 1);
+    }
+  }
+}
+
+const ago = t => {
+  const s = (Date.now() - (t || 0)) / 1000;
+  if (s < 60) return "just now";
+  if (s < 3600) return Math.floor(s / 60) + " min ago";
+  if (s < 86400) return Math.floor(s / 3600) + " h ago";
+  return new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+};
+const projectItems = list => list.map(p =>
+  `<li class="${p === active ? "on" : ""}"><button type="button" class="open" data-open="${esc(p.id)}"><b>${esc(p.title)}</b>` +
+  `<small>${(n => n + (n === 1 ? " message" : " messages"))(p.history.filter(m => m.role === "user").length)} · ${ago(p.updated)}</small></button>` +
+  `<button type="button" class="del" data-del="${esc(p.id)}" aria-label="Delete ${esc(p.title)}" title="Delete">×</button></li>`).join("");
+
+function renderProjects(){
+  $("projLabel").textContent = active ? active.title : "New design";
+  $("projList").innerHTML = projects.length ? projectItems(projects) : '<li><p class="pempty">No saved projects yet. Your first design will show up here.</p></li>';
+  $("recent").hidden = !projects.length;
+  $("recentList").innerHTML = projectItems(projects.slice(0, 6));
+}
+
+function openProject(p){
+  if (busy || !p) return;
+  closeMenu();
+  active = p; visualSeq++;
+  spec = p.spec || {}; history = p.history;
+  $("land").hidden = true; $("ws").hidden = false;
+  log.innerHTML = "";
+  addMsg("ai", INTRO);
+  for (const m of history) addMsg(m.role === "user" ? "user" : "ai", m.content || "Updated the design.");
+  if (p.design) {
+    showDesign(p.design, false);
+    if (p.scene) showScene(p.scene.data, p.scene.info);
+    fetch("/api/tokens").then(r => r.json()).then(t => { if (active === p) renderBudget(t); }).catch(() => {});
+  }
+  renderProjects();
+  $("input").focus();
+}
+
+function deleteProject(p){
+  if (!p || busy || !confirm(`Delete "${p.title}"? This can't be undone.`)) return;
+  projects = projects.filter(x => x !== p);
+  saveProjects();
+  if (p === active) leave(); else renderProjects();
+}
+
+function closeMenu(){ $("projMenu").hidden = true; $("projBtn").setAttribute("aria-expanded", "false"); }
+$("projBtn").addEventListener("click", () => {
+  const open = $("projMenu").hidden;
+  $("projMenu").hidden = !open; $("projBtn").setAttribute("aria-expanded", String(open));
+});
+document.addEventListener("click", e => {
+  if (!e.target.closest(".picker")) closeMenu();
+  const o = e.target.closest("[data-open]"), d = e.target.closest("[data-del]");
+  if (o) openProject(projects.find(p => p.id === o.dataset.open));
+  if (d) deleteProject(projects.find(p => p.id === d.dataset.del));
+});
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("projMenu").hidden) { closeMenu(); $("projBtn").focus(); } });
+renderProjects();
 
 ["A 6U CubeSat that images wildfires for 1 year", "12U with a methane spectrometer at 700 km", "3U radio relay at 500 km for 2 years"].forEach(s => {
   const c = document.createElement("button"); c.type = "button"; c.className = "chip"; c.textContent = s;
