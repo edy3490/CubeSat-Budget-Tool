@@ -70,6 +70,9 @@ class ServerTest(unittest.TestCase):
         disposition, stl = self.export({"design_id": out["design_id"], "format": "stl"})
         self.assertTrue(disposition.endswith('.stl"'))
         self.assertEqual(len(stl), 84 + 50 * int.from_bytes(stl[80:84], "little"))
+        disposition, step = self.export({"design_id": out["design_id"], "name": "Wildfire Watcher"})
+        self.assertTrue(disposition.endswith('filename="Wildfire-Watcher.step"'))
+        self.assertIn(b"PRODUCT('Wildfire Watcher'", step)
         for body, code in (({"design_id": "nope"}, 404), ({"design_id": out["design_id"], "format": "obj"}, 400)):
             with self.subTest(body=body), self.assertRaises(urllib.error.HTTPError) as e:
                 self.post("/api/export", body)

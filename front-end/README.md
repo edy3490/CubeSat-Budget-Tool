@@ -18,6 +18,7 @@ The page opens on a **landing page** (hero, prompt box, example chips). Sending 
 On top of the original layout the page adds a **3D model** (in place of the stack sketch) and a **build plan**:
 
 - The 3D model shows a quick rule-based layout first, then the model's drawing. It has explode/assemble, a spread slider, part labels and hover details, and hovering a table row highlights its part. **Export STEP** downloads it as solid parts for CAD (SolidWorks, Fusion 360, FreeCAD, Onshape), and **Export STL** as a mesh for 3D printing (see `visualizer/README.md`).
+- Designs are saved in this browser as projects. The project menu in the header reopens them; ✎ renames one (Enter or clicking away saves, Escape cancels) and × deletes it.
 - The Sonnet token meter is shown in the corner of the 3D view.
 - The starter design never spends tokens; click **Draw with AI** to have it drawn.
 - Under the 3D model, **How it works** shows the model's explanation: an overview, what each part does and why it was picked, and why the layout fits.

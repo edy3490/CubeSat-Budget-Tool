@@ -7,7 +7,7 @@ API (POST bodies are JSON; errors come back as {"detail": "..."}):
     POST /api/budget        {}                              -> starter design
     POST /api/cubesat-chat  {"messages": [...], "spec": {}} -> {"reply", "spec", "budget", ...}
     POST /api/visual        {"design_id", "regenerate"}     -> 3D scene (Sonnet until 25k tokens, then Haiku)
-    POST /api/export        {"design_id", "format", "exploded"} -> the 3D model as a STEP or STL file for CAD
+    POST /api/export        {"design_id", "format", "exploded", "name"} -> the 3D model as a STEP or STL file for CAD
     GET  /api/tokens                                        -> Sonnet token budget
 
 `spec` is opaque to the page: it sends back whatever the last response gave it.
@@ -305,7 +305,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._error(404, "unknown design; make a new one")
         # The model's drawing once it has arrived, otherwise the quick layout the page is showing.
         scene = entry.get("scene") or default_scene(entry["design"])
-        name = entry["design"].get("name") or "CubeSat"
+        # The user's name for the project, if they gave one; it names the file and the CAD assembly.
+        name = str(body.get("name") or "").strip()[:80] or entry["design"].get("name") or "CubeSat"
         exploded = bool(body.get("exploded"))
         if fmt == "stl":
             return self._send(200, to_stl(scene, name, exploded), "model/stl", download=file_name(name, "stl"))

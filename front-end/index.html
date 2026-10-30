@@ -46,6 +46,9 @@ header{display:flex;justify-content:space-between;align-items:center;gap:12px}
 .plist .open small{color:var(--muted);font-size:12px}
 .plist .del{background:transparent;border:0;color:var(--muted);padding:6px 10px;font-size:16px;line-height:1}
 .plist .del:hover{color:var(--bad)}
+.plist .ren{background:transparent;border:0;color:var(--muted);padding:6px 4px 6px 10px;font-size:14px;line-height:1}
+.plist .ren:hover{color:var(--accent)}
+.plist input.rename{flex:1;min-width:0;margin:4px 0 4px 4px;padding:7px 8px;font:inherit;color:var(--fg);background:var(--pane);border:1px solid var(--accent);border-radius:6px}
 .pempty{color:var(--muted);font-size:13px;padding:10px;margin:0}
 .recent{margin-top:28px}.recent .label{text-align:center}
 .recent .plist{background:var(--pane);border:1px solid var(--line);border-radius:14px;padding:6px}
@@ -742,7 +745,7 @@ if (viewer) {
     try {
       // Exports what's on screen: assembled, or exploded if the view is spread out.
       const res = await fetch("/api/export", {method:"POST", headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({ design_id: current.design_id, format, exploded: viewer.exploded })});
+        body:JSON.stringify({ design_id: current.design_id, format, exploded: viewer.exploded, name: active?.title })});
       if (!res.ok) { let d = ""; try { d = (await res.json()).detail || ""; } catch (e) {} throw new Error("Server returned " + res.status + (d ? ": " + d : "")); }
       const name = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") || "")?.[1] || "cubesat." + format;
       const a = document.createElement("a");
@@ -933,6 +936,7 @@ const ago = t => {
 const projectItems = list => list.map(p =>
   `<li class="${p === active ? "on" : ""}"><button type="button" class="open" data-open="${esc(p.id)}"><b>${esc(p.title)}</b>` +
   `<small>${(n => n + (n === 1 ? " message" : " messages"))(p.history.filter(m => m.role === "user").length)} · ${ago(p.updated)}</small></button>` +
+  `<button type="button" class="ren" data-ren="${esc(p.id)}" aria-label="Rename ${esc(p.title)}" title="Rename">✎</button>` +
   `<button type="button" class="del" data-del="${esc(p.id)}" aria-label="Delete ${esc(p.title)}" title="Delete">×</button></li>`).join("");
 
 function renderProjects(){
@@ -968,6 +972,29 @@ function deleteProject(p){
   if (p === active) leave(); else renderProjects();
 }
 
+// Swap the project's name for a text box: Enter or clicking away saves, Escape cancels.
+function renameProject(p, li){
+  if (!p || !li) return;
+  const input = document.createElement("input");
+  input.className = "rename"; input.value = p.title; input.maxLength = 80;
+  input.setAttribute("aria-label", "New name for " + p.title);
+  li.querySelector(".open").replaceWith(input);
+  input.focus(); input.select();
+  let done = false;
+  const finish = save => {
+    if (done) return;
+    done = true;
+    const title = input.value.replace(/\s+/g, " ").trim();
+    if (save && title && title !== p.title) { p.title = title; saveProjects(); }   // keeps its place: `updated` is unchanged
+    renderProjects();
+  };
+  input.addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); finish(true); }
+    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); finish(false); }   // don't close the menu too
+  });
+  input.addEventListener("blur", () => finish(true));
+}
+
 function closeMenu(){ $("projMenu").hidden = true; $("projBtn").setAttribute("aria-expanded", "false"); }
 $("projBtn").addEventListener("click", () => {
   const open = $("projMenu").hidden;
@@ -975,9 +1002,10 @@ $("projBtn").addEventListener("click", () => {
 });
 document.addEventListener("click", e => {
   if (!e.target.closest(".picker")) closeMenu();
-  const o = e.target.closest("[data-open]"), d = e.target.closest("[data-del]");
+  const o = e.target.closest("[data-open]"), d = e.target.closest("[data-del]"), r = e.target.closest("[data-ren]");
   if (o) openProject(projects.find(p => p.id === o.dataset.open));
   if (d) deleteProject(projects.find(p => p.id === d.dataset.del));
+  if (r) renameProject(projects.find(p => p.id === r.dataset.ren), r.closest("li"));
 });
 document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("projMenu").hidden) { closeMenu(); $("projBtn").focus(); } });
 renderProjects();

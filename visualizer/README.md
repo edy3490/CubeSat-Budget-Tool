@@ -126,7 +126,8 @@ The 3D toolbar has two export buttons:
 - Both formats:
   - use the body frame above (mm, origin at the center of the structure);
   - export what's on screen: the model's drawing once it has arrived, otherwise the quick layout, and exploded if the view is spread out.
-- The server endpoint is `POST /api/export {"design_id", "format": "step" | "stl", "exploded"}`.
+- Files are named after the project (rename it with ✎ in the project menu); the STEP assembly takes the same name.
+- The server endpoint is `POST /api/export {"design_id", "format": "step" | "stl", "exploded", "name"}`.
 - Only the standard library is used. Boxes and cylinders are written straight out as B-rep (STEP) or triangles (STL).
 - Both outputs were checked in OpenCASCADE, the geometry kernel FreeCAD uses:
   - STEP: every solid is valid, the volumes match the scene, and the names and colours read back.
