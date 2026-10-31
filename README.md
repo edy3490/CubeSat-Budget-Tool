@@ -1,4 +1,4 @@
-# CubeSat Generator
+# CubeSat Budget Tool
 
 Type a satellite idea and get a CubeSat: real parts, cost, SWaP, checks, a build plan and a 3D model you can explore.
 
