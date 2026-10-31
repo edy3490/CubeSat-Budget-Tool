@@ -1,5 +1,5 @@
 """normalize() is the safety net: whatever comes in, a valid SatSpec comes out."""
-from sat_parser.schema import DEFAULTS, normalize
+from sat_parser.schema import DEFAULTS, SatSpec, normalize
 
 
 def test_empty_input_uses_all_defaults_and_marks_them_assumed():
@@ -69,3 +69,21 @@ def test_garbage_numbers_fall_back_to_defaults():
 def test_input_cannot_fake_the_assumed_list():
     spec = normalize({"assumed": ["nothing"], "size_u": 3})
     assert "nothing" not in spec.assumed
+
+
+def test_placeholder_goal_is_treated_as_empty():
+    # The model sometimes writes '""' or "none" for a goal the user never gave.
+    for junk in ('""', "''", "None", "n/a", "  not stated. "):
+        assert normalize({"mission_goal": junk, "notes": junk}).mission_goal == ""
+        assert normalize({"notes": junk}).notes == ""
+
+
+def test_real_goal_keeps_its_text_without_stray_quotes():
+    assert normalize({"mission_goal": '"Image wildfires"'}).mission_goal == "Image wildfires"
+
+
+def test_saved_spec_is_cleaned_too():
+    # The server rebuilds saved projects with model_validate, which skips normalize().
+    spec = SatSpec.model_validate({"size_u": 1, "payload": "radio_relay", "orbit": "LEO",
+                                   "altitude_km": 500, "lifetime_years": 1, "mission_goal": '""'})
+    assert spec.mission_goal == ""

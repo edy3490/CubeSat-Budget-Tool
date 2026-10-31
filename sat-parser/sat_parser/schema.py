@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 # ---------------------------------------------------------------------------
 # Allowed values. Keep these in sync with the rows in the parts table, so the
@@ -35,6 +35,16 @@ ALTITUDE_RANGE_KM = (200, 2000)
 LIFETIME_RANGE_YEARS = (0.1, 10.0)
 
 
+# What the model sometimes writes when it means "nothing": treat these as empty.
+_EMPTY_TEXT = {"", "none", "n/a", "na", "null", "nil", "unknown", "not stated", "not specified", "-"}
+
+
+def _text(value) -> str:
+    """A free-text field, with stray quotes trimmed and placeholder answers made empty."""
+    s = str(value or "").strip().strip("\"'`").strip()
+    return "" if s.rstrip(".").lower() in _EMPTY_TEXT else s
+
+
 class SatSpec(BaseModel):
     """A cleaned, validated satellite request. Every field is always filled in."""
 
@@ -48,6 +58,12 @@ class SatSpec(BaseModel):
     off_topic: bool = Field(default=False, description="True if the text isn't a satellite idea")
     assumed: list[str] = Field(default_factory=list, description="Fields filled from DEFAULTS")
     warnings: list[str] = Field(default_factory=list, description="Values that were changed to fit")
+
+    # Runs for parsed specs and for saved ones the server rebuilds, so a stray '""' never becomes a name.
+    @field_validator("mission_goal", "notes", mode="before")
+    @classmethod
+    def _clean_text(cls, value) -> str:
+        return _text(value)
 
 
 def _snap_size(value) -> tuple[int, Optional[str]]:
