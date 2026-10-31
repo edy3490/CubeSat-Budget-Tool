@@ -494,6 +494,36 @@ class DescriptionAndExtrasTest(Base):
         self.assertIn("passive magnetic stabilization", client.calls[0]["messages"][0]["content"])
         self.assertNotEqual(SceneGenerator.cache_key(self.d, {"design_notes": [note]}), SceneGenerator.cache_key(self.d, {}))
 
+    def test_prompt_gives_the_fit_verdict_and_end_face_heights(self):
+        prompt = build_prompt(self.d, instances(self.d), [])
+        need, room, verdict = sc.inside_fit(self.d["parts"], envelope(self.d))
+        self.assertIn(f'fit.verdict is \"{verdict}\"', prompt)
+        rows = json.loads(prompt.rsplit("\n", 1)[-1])
+        uhf = next(r for r in rows if r["part"] == "UHF Antenna 1U")
+        z = envelope(self.d)[2] / 2 + library.lookup("UHF Antenna 1U")["size"][2] / 2
+        self.assertEqual(uhf["pos_z_on_end_face"], {"+z": round(z, 1), "-z": -round(z, 1)})
+        self.assertTrue(all("pos_z_on_end_face" not in r for r in rows if r.get("slot") == "flight computer"))
+        patch = next(r for r in rows if r.get("slot") == "downlink antenna")
+        t = library.lookup(patch["part"])["size"][2] / 2
+        self.assertEqual(patch["pos_on_side_face"]["-y"], -round(envelope(self.d)[1] / 2 + t, 1))
+
+    def test_fit_verdict_always_matches_the_designers_check(self):
+        _, _, verdict = sc.inside_fit(self.d["parts"], envelope(self.d))
+        for model_says, kept in ((verdict, True), ("does_not_fit" if verdict != "does_not_fit" else "fits", False)):
+            g, client = self.gen()
+            orig = client.create
+
+            def create(**kw):
+                resp = orig(**kw)
+                data = json.loads(resp.content[0].text)
+                data["fit"] = {"verdict": model_says, "note": "the model's note"}
+                resp.content[0].text = json.dumps(data)
+                return resp
+            client.create = create
+            fit = g.generate(self.d, regenerate=True)["scene"]["fit"]
+            self.assertEqual(fit["verdict"], verdict)
+            self.assertEqual(fit["note"] == "the model's note", kept)
+
     def test_command_line_runs(self):
         from visualizer.__main__ import main
         with mock.patch("visualizer.__main__.TokenUsage", lambda: self.usage), \
