@@ -2,6 +2,42 @@
 
 Type a satellite idea and get a CubeSat: real parts, cost, SWaP, checks, a build plan and a 3D model you can explore.
 
+## Key features
+
+**Design by describing it**
+- Write the mission in plain English ("a 6U CubeSat that images wildfires for 1 year"). Claude Haiku turns it into a spec: size, payload, orbit, altitude and lifetime. A keyword parser takes over when there's no API key.
+- Change the design by chatting ("make it 12U", "raise the orbit to 700 km"). Each edit builds on the last.
+- Suggested edits under the chat change after every message and skip ones the design already matches.
+
+**Real parts and real numbers**
+- Parts come from a database of 330 real CubeSat parts (NASA's 2026 small-spacecraft survey, plus vendor and catalog data), each with its data source.
+- The designer picks parts that fit the frame and the budget.
+- **Mass:** total against the CubeSat limit for the size, with the margin.
+- **Power:** orbit-average generation against use, and whether the battery survives eclipse.
+- **Cost:** hardware plus launch, marked as a minimum when a part has no public price.
+- **Build time.**
+- **Flags** warn about problems: over mass, negative energy, a missing subsystem, an orbit that decays too fast or breaks the 5-year deorbit rule, and thrusters limited by the battery.
+- **Build plan:** a week-by-week timeline of phases, and what to start now.
+
+**3D model**
+- Claude Sonnet lays the satellite out from pre-drawn part models; a rule-based layout shows instantly while it works.
+- Rotate, zoom, explode the satellite into its parts, show labels, and hover a part (or its table row) to see what it is and what it does.
+- **How it works** explains the satellite and its layout for non-engineers. Unusual requests ("with a laser") get plausible extra parts, marked as estimates.
+- **Export STEP** (named, coloured solid parts for SolidWorks, Fusion 360, FreeCAD or Onshape) or **Export STL** (a mesh for 3D printing).
+
+**Launch simulation**
+- 🚀 **Launch** flies your own satellite to its orbit, with orbit facts.
+- **Follow satellite** (or press F) rides along with the rocket and then the satellite.
+
+**Projects**
+- Every design is saved in your browser as a project you can reopen, rename (✎) or delete (×).
+- Saved projects still work after the server restarts.
+- Light and dark mode (🌙 / ☀️).
+
+**Ready to host**
+- `render.yaml` deploys the site to Render.
+- AI calls are rate limited per visitor and per site. Over a limit, the site keeps working without AI instead of failing.
+
 ## Run it locally
 
 Needs Python 3.9 or newer. Always open the page through `server.py`: opening `index.html` directly,
