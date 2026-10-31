@@ -417,6 +417,7 @@ const viewer = await (async () => {
       root.add(g); groups.push(g);
     }
     scene.add(root);
+    resize();                  // the view may have just been unhidden (opening a saved project); size it before framing
     apply();
     aimSun();
     fit(true);
@@ -469,6 +470,7 @@ const viewer = await (async () => {
 
   function resize() {
     const w = box.clientWidth, h = box.clientHeight;
+    if (!w || !h) return;      // hidden (landing page): a 0-wide view would frame the camera at infinity
     renderer.setSize(w, h, false);
     camera.aspect = w / Math.max(1, h); camera.updateProjectionMatrix();
     if (root) frames = measure();
