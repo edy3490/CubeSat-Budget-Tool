@@ -524,10 +524,10 @@ def describe_layout(scene: dict, design: dict, stack: list[dict], why: str) -> N
     tallest = max(bbox(p["shapes"])[1][2] for p in stack)
     spare = ceiling - tallest
     verdict = "fits" if spare >= 0.05 * room else "tight"
-    fit_note = f"The tallest stack uses {tallest - floor:.0f} of the {room:.0f} mm inside the frame, leaving {max(spare, 0):.0f} mm."
-    text.append(f"{fit_note} These positions were set by the app, not the model, because parts {why}.")
+    used = f"The tallest stack uses {tallest - floor:.0f} of the {room:.0f} mm inside the frame, leaving {max(spare, 0):.0f} mm."
+    text.append(f"{used} These positions were set by the app, not the model, because parts {why}.")
 
-    scene["fit"] = {"verdict": verdict, "note": fit_note}
+    scene["fit"] = {"verdict": verdict, "note": used}
     scene["summary"] = (f"Inside parts in {len(groups)} side-by-side stacks along the rails" if len(groups) > 1
                         else "Inside parts in one stack along the rails") + ", re-arranged so nothing overlaps or sticks out."
     desc = scene.get("description")
@@ -709,6 +709,14 @@ def fit_verdict(need: float, room: float) -> str:
     return "does_not_fit" if need > room * 1.05 else "tight" if need > room * 0.92 else "fits"
 
 
+def fit_note(need: float, room: float) -> str:
+    note = f"Stacked, the inside parts need about {need:.0f} mm and the frame has {room:.0f} mm"
+    if need > room:
+        note += (f"; {need - room:.0f} mm over, so it only fits with closer board spacing than these drawings use"
+                 if fit_verdict(need, room) == "tight" else f"; {need - room:.0f} mm over")
+    return note + ". Sizes come from the part library (some are estimates)."
+
+
 def inside_fit(parts: list[dict], envelope_mm: list[float]) -> tuple[float, float, str]:
     """Will these parts (design-style dicts: slot, part, unit_mass_kg, quantity, peak_power_w,
     estimated_placeholder) fit inside the frame? Returns (need_mm, room_mm, verdict)."""
@@ -825,17 +833,12 @@ def default_scene(design: dict) -> dict:
             add(info, [_box((0, yc, zc), (side, h, side), "copper")])
 
     verdict = fit_verdict(need, room)
-    fit_note = f"Stacked, the inside parts need about {need:.0f} mm and the frame has {room:.0f} mm"
-    if need > room:
-        fit_note += (f"; {need - room:.0f} mm over, so it only fits with closer board spacing than these drawings use"
-                     if verdict == "tight" else f"; {need - room:.0f} mm over")
-    fit_note += ". Sizes come from the part library (some are estimates)."
 
     parts.sort(key=lambda p: [i["ref"] for i in items].index(p["ref"]))
     scene = {
         "envelope_mm": env,
         "summary": "Rule-based layout: library parts stacked along the rails, payload at the Earth-facing end.",
-        "fit": {"verdict": verdict, "note": fit_note},
+        "fit": {"verdict": verdict, "note": fit_note(need, room)},
         "parts": parts,
     }
     return explode(scene, design)

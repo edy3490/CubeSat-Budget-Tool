@@ -69,7 +69,8 @@ How to lay it out:
 - Stack the inside modules along z, about 1 mm apart (boards include their standoffs), in the board columns the request lists, and only within its inside z range. When the stack needs more height than that, split it across the columns side by side.
 - Camera at the bottom with its lens out through the -z face (its baffle may stick out of the face by about 12 mm). Thrusters at an end with the nozzle pointing out.
 - Body solar panels lie flat on the long faces just outside the rails. Panels too wide for a face, and deployable arrays, are wings at the +z end reaching outward.
-- UHF antenna modules go on an end face (+z first, a second one on -z). The GNSS patch faces +z (on top of the UHF module is fine). The downlink patch faces Earth: on the -z face if it is free, but when there is a camera (its lens fills the -z face) put the patch on a side face near the -z end (for example up -y, just outside any panel on that face).
+- UHF antenna modules go on an end face (+z first, a second one on -z). The GNSS patch faces +z (on top of the UHF module is fine).
+- A part on a face sits outside it, so its center is half its own thickness beyond the face: use the row's "pos_z_on_end_face" or "pos_on_side_face". A part on top of another one (the GNSS patch on the UHF module, a patch on a solar panel) goes that part's thickness further out. The downlink patch faces Earth: on the -z face if it is free, but when there is a camera (its lens fills the -z face) put the patch on a side face near the -z end (for example up -y, just outside any panel on that face).
 - Inside parts must stay inside the envelope and must not overlap each other.
 
 Explain it for a reader who isn't a spacecraft engineer, in plain words:
@@ -77,7 +78,7 @@ Explain it for a reader who isn't a spacecraft engineer, in plain words:
 - Where the designer's notes say how the satellite works (for example no attitude-control unit, so it relies on passive magnetic stabilization), the description must agree with them.
 - description.overview: 2-3 sentences on how the satellite does its mission: what collects the data or does the job, how commands and data reach the ground, where power comes from, how it points.
 - description.layout: 2-3 sentences justifying the arrangement: why the main parts sit where they do and how that leads to the fit verdict.
-- fit.verdict (fits, tight or does_not_fit) with one sentence why, and a one-sentence summary of the layout.
+- fit.verdict: the verdict from the app's fit check in the request (it's measured from the part heights; don't recompute it), with one sentence why. Then a one-sentence summary of the layout.
 
 Extras: if the request asks for something none of the listed parts can do (for example a laser, a robotic arm, a disco ball, a speaker), add 1-{MAX_EXTRAS} extra parts that would plausibly provide it. Give each a realistic name, a one-sentence purpose, an estimated mass_kg and power_w, draw it and place it inside or on the satellite without overlapping other parts. If an already-drawn extra fits the need, reuse it by its exact name with "shapes": []. If a requested feature is impossible or unsafe in reality, still add a plausible small version and say so plainly in its purpose. Don't add extras when the listed parts already cover the request; then "extras" is []. To remove an earlier extra the request no longer wants, put its ref in drop_extras.
 
@@ -174,6 +175,13 @@ def build_prompt(design: dict, todo: list[dict], kept: list[dict], request: dict
             row["why"] = p["why"][:160]
         if e:
             row["library"] = {"size": e["size"], "note": e["note"]}
+            env, t = sc.envelope(design), e["size"][2] / 2          # the step the model kept getting wrong
+            if sc.kind_of(p) in ("whip_antenna", "patch_zenith"):
+                z = round(env[2] / 2 + t, 1)
+                row["pos_z_on_end_face"] = {"+z": z, "-z": -z}
+            if sc.kind_of(p) == "patch_nadir":
+                x, y = round(env[0] / 2 + t, 1), round(env[1] / 2 + t, 1)
+                row["pos_on_side_face"] = {"+x": x, "-x": -x, "+y": y, "-y": -y}
         else:
             row["draw"] = True
             row["power_w"] = p["peak_power_w"] and round(p["peak_power_w"] / p["quantity"], 2)
@@ -188,11 +196,14 @@ def build_prompt(design: dict, todo: list[dict], kept: list[dict], request: dict
     env = sc.envelope(design)
     lo, hi = sc.inside_z(env)
     need = sc.inside_stack_mm(design)
+    fit_need, fit_room, verdict = sc.inside_fit(design["parts"], env)
     cols = [[round(c[0]), round(c[1])] for c in sc._columns(env)]
     lines += [f"Form factor: {design['form_factor']}", f"Envelope [x, y, z] mm: {env}",
               f"Inside: z from {lo:g} to {hi:g} ({hi - lo:g} mm). Board columns, centers [x, y]: {cols}. "
               f"The inside parts need about {need:.0f} mm stacked"
               + (", more than one column holds, so split them across the columns." if need > hi - lo and len(cols) > 1 else "."),
+              f"App's fit check: packed into the board columns, the fullest column needs about {fit_need:.0f} of its "
+              f"{fit_room:.0f} mm, so fit.verdict is \"{verdict}\".",
               f"Side faces: +x and -x are {env[1]:g} x {env[2]:g} mm, +y and -y are {env[0]:g} x {env[2]:g} mm. "
               "A body panel goes only on a face at least as wide as the panel.",
               f"Satellite: {design['name']}"]
@@ -438,6 +449,11 @@ class SceneGenerator:
         # to new places, it can rewrite the layout text to match.
         repairs += sc.fix_outside(fixed, design)
         repairs += sc.fix_inside(fixed, design)
+        # The fit verdict is the app's (the same check as the designer's "Fits inside" flag), so the
+        # caption and the flags always agree. The model's note stays when it reached the same verdict.
+        need, room, verdict = sc.inside_fit(design["parts"], env)
+        if fixed["fit"].get("verdict") != verdict:
+            fixed["fit"] = {"verdict": verdict, "note": sc.fit_note(need, room)}
         sc.explode(fixed, design)
         return fixed, repairs, saved
 
