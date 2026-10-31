@@ -1,0 +1,28 @@
+# Render blueprint: in the Render dashboard choose New > Blueprint and pick this repo.
+# You'll be asked for ANTHROPIC_API_KEY (kept secret in Render, never in the repo).
+services:
+  - type: web
+    name: cubesat-designer
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python server.py
+    healthCheckPath: /
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.0
+      - key: HOST
+        value: 0.0.0.0
+      - key: TRUST_PROXY
+        value: "true"
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      # AI calls allowed per hour; over these the site keeps working without AI. 0 = no limit.
+      - key: CHAT_PER_VISITOR_HOUR
+        value: "30"
+      - key: CHAT_PER_HOUR
+        value: "400"
+      - key: VISUAL_PER_VISITOR_HOUR
+        value: "10"
+      - key: VISUAL_PER_HOUR
+        value: "100"

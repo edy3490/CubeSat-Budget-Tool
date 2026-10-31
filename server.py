@@ -15,7 +15,9 @@ API (POST bodies are JSON; errors come back as {"detail": "..."}):
 `budget` is the page's summary shape (mass, power, cost, rows, notes); the full
 design, build plan and quick 3D layout come alongside it.
 
-The API key stays on this machine; the page never sees it. Listens on localhost only.
+The API key stays on the server; the page never sees it. Listens on localhost only unless
+--host / HOST says otherwise (the Render config sets 0.0.0.0). AI calls are rate limited per
+visitor and per site (see LIMITS); over a limit, requests fall back to the non-AI path.
 """
 from __future__ import annotations
 
@@ -26,7 +28,8 @@ import re
 import secrets
 import sys
 import threading
-from collections import OrderedDict
+import time
+from collections import OrderedDict, deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
@@ -51,6 +54,56 @@ STARTER_IDEA = "6U CubeSat that images wildfires from low Earth orbit for 1 year
 MAX_BODY_BYTES = 256_000
 MAX_IDEA_CHARS = 2_000
 KEEP_DESIGNS = 100
+
+
+# ---------------------------------------------------------------- AI limits (for a public site)
+# Over a limit, a request still works, just without AI (keyword parser, rule-based 3D layout),
+# so one busy visitor can't run up the API bill. Set any of these to 0 to turn it off.
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.environ.get(name, default))
+    except ValueError:
+        return default
+
+
+LIMITS = {   # (per visitor per hour, whole site per hour)
+    "chat": (_env_int("CHAT_PER_VISITOR_HOUR", 30), _env_int("CHAT_PER_HOUR", 400)),
+    "visual": (_env_int("VISUAL_PER_VISITOR_HOUR", 10), _env_int("VISUAL_PER_HOUR", 100)),
+}
+# Behind a host's proxy (Render, Railway, ...) every request comes from the proxy, so the visitor's
+# address is read from X-Forwarded-For instead.
+TRUST_PROXY = os.environ.get("TRUST_PROXY", "").lower() in ("1", "true", "yes")
+
+
+class RateLimiter:
+    """Sliding one-hour window per (kind, visitor), plus one per kind for the whole site."""
+
+    def __init__(self, limits: dict):
+        self.limits = limits
+        self._hits: dict[tuple, deque] = {}
+        self._lock = threading.Lock()
+
+    def allow(self, kind: str, visitor: str) -> bool:
+        per_visitor, overall = self.limits[kind]
+        now = time.monotonic()
+        with self._lock:
+            if len(self._hits) > 5000:   # forget visitors who have gone quiet
+                self._hits = {k: d for k, d in self._hits.items() if d and now - d[-1] < 3600}
+            mine = self._hits.setdefault((kind, visitor), deque())
+            everyone = self._hits.setdefault((kind, None), deque())
+            for d in (mine, everyone):
+                while d and now - d[0] > 3600:
+                    d.popleft()
+            if (per_visitor and len(mine) >= per_visitor) or (overall and len(everyone) >= overall):
+                return False
+            mine.append(now)
+            everyone.append(now)
+            return True
+
+
+LIMITER = RateLimiter(LIMITS)
+LIMIT_NOTE = "(AI limit reached for now, so this used the keyword parser. It'll be back within the hour.)"
 
 
 # ---------------------------------------------------------------- response shapes
@@ -243,6 +296,10 @@ class Handler(BaseHTTPRequestHandler):
     def _error(self, code: int, detail: str) -> None:
         self._json(code, {"detail": detail})
 
+    def _visitor(self) -> str:
+        fwd = self.headers.get("X-Forwarded-For") if TRUST_PROXY else None
+        return fwd.split(",")[0].strip() if fwd else self.client_address[0]
+
     def _same_origin(self) -> bool:
         # Block other websites from driving this server (and spending tokens) through your browser.
         origin = self.headers.get("Origin")
@@ -306,12 +363,17 @@ class Handler(BaseHTTPRequestHandler):
         spec = body.get("spec")
         previous = _previous_spec(self.state, spec)
         previous_id = spec.get("design_id") if isinstance(spec, dict) and self.state.get(spec.get("design_id")) else None
-        r = run(text, previous=previous, use_llm=None if self.state.use_llm else False)
+        limited = self.state.use_llm and not LIMITER.allow("chat", self._visitor())
+        use_llm = self.state.use_llm and not limited
+        r = run(text, previous=previous, use_llm=None if use_llm else False)
         if r.data.get("off_topic"):
             return self._json(200, {
                 "reply": "That doesn't look like a satellite idea. Try something like: a 3U CubeSat that images crops from a polar orbit.",
                 "spec": body.get("spec") or {}, "off_topic": True})
-        self._json(200, self.state.respond(r, self.state.use_llm, previous_id))
+        out = self.state.respond(r, use_llm, previous_id)
+        if limited:
+            out["reply"] = out["reply"].replace("(Keyword parser, offline mode.)", LIMIT_NOTE)
+        self._json(200, out)
 
     def _visual(self, body: dict):
         entry = self.state.get(body.get("design_id"))
@@ -322,7 +384,8 @@ class Handler(BaseHTTPRequestHandler):
         previous = ({"design": prev["design"], "scene": prev["scene"], "source": prev["scene_source"]}
                     if prev and prev.get("scene") else None)
         out = self.state.generator.generate(entry["design"], regenerate=bool(body.get("regenerate")),
-                                            use_llm=self.state.use_llm, previous=previous,
+                                            use_llm=self.state.use_llm and LIMITER.allow("visual", self._visitor()),
+                                            previous=previous,
                                             request=entry.get("request"))
         entry["scene"], entry["scene_source"] = out["scene"], out["source"]
         self._json(200, out)
@@ -346,18 +409,22 @@ class Handler(BaseHTTPRequestHandler):
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Serve the CubeSat prototype at http://localhost:PORT")
-    ap.add_argument("--port", type=int, default=8000)
+    ap.add_argument("--port", type=int, default=_env_int("PORT", 8000))
+    ap.add_argument("--host", default=os.environ.get("HOST", "127.0.0.1"),
+                    help="0.0.0.0 to accept outside visitors (set by the hosting config)")
     ap.add_argument("--no-llm", action="store_true", help="keyword parser and default 3D layout only (no API calls)")
     args = ap.parse_args(argv)
 
     has_key = bool(os.environ.get("ANTHROPIC_API_KEY"))
     use_llm = has_key and not args.no_llm
     Handler.state = State(use_llm)
-    httpd = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
+    httpd = ThreadingHTTPServer((args.host, args.port), Handler)
     t = Handler.state.generator.usage.status()
     print(f"CubeSat prototype: http://localhost:{args.port}", flush=True)
     if use_llm:
-        print(f"3D visuals: {t['model']}, no limit ({t['tokens_used']:,} tokens so far, about ${t['cost_usd']:.2f}).", flush=True)
+        print(f"3D visuals: {t['model']} ({t['tokens_used']:,} tokens so far, about ${t['cost_usd']:.2f}).", flush=True)
+        print("AI limits per hour (visitor / whole site): " + ", ".join(
+            f"{k} {a or '∞'} / {b or '∞'}" for k, (a, b) in LIMITS.items()), flush=True)
     else:
         print("No API key (or --no-llm): keyword parser and the default 3D layout only.", flush=True)
     print("Ctrl+C to stop.", flush=True)

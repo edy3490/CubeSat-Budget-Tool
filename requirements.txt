@@ -1,0 +1,4 @@
+# What server.py needs to run (used by the hosting build).
+anthropic>=0.40
+pydantic>=2.0
+python-dotenv>=1.0
