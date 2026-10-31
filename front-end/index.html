@@ -560,11 +560,26 @@ const viewer = await (async () => {
     setExplode(v, animate) { target = v; if (!animate) { t = v; apply(); if (autoFrame) frame(); } },
     get exploded() { return target > 0.5; },
     setLabels(on) { labelsOn = on; },
+    // A standalone copy of the assembled model (no edge lines or hover glow), for the launch scene.
+    snapshot() {
+      if (!root) return null;
+      const out = new THREE.Group();
+      for (const g of groups) for (const m of g.children) {
+        if (!m.isMesh) continue;
+        const c = m.clone(false);
+        c.geometry = m.geometry.clone();
+        c.material = m.material.clone();
+        c.material.emissive.set(0x000000); c.material.emissiveIntensity = 0;
+        out.add(c);
+      }
+      return out;
+    },
     highlightKey(k) { highlight(k ? groups.findIndex(g => keyOf(g.userData.part) === k) : -1); },
     keyOf,
     set onHover(fn) { onHover = fn; },
   };
 })();
+window.__satModel = () => viewer?.snapshot() || null;   // read by the launch scene
 
 // POST JSON and return the response, throwing on an error status. If the server has forgotten the
 // design (it restarted since a saved project was made), hand it the saved spec back and try once more.
@@ -1067,6 +1082,7 @@ if (params.get("idea")) {
 <script type="module">
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 
 const MU = 398600.4418, RE = 6371, VIS = 3, L0 = 3.2;
 
@@ -1228,7 +1244,7 @@ function launch() {
     <div>Orbits per day <b>${(86400 / T).toFixed(1)}</b></div><div>Orbits in ${years} yr <b>${Math.round(years * 365.25 * 86400 / T).toLocaleString()}</b></div>
     <div>Mission time <b id="lmt">T-3</b></div><div>Lighting <b id="lli">–</b></div>
     <div style="font-size:12px;color:#98a0aa;display:block">Altitude exaggerated ${VIS}× for visibility<br><span id="lsrc">Loading Earth imagery…</span></div></div>
-    <div class="x"><button id="lrp">Replay</button><button id="lcl">Close</button></div><div class="big"></div><div class="stat"></div>`;
+    <div class="x"><button id="lfo" aria-pressed="false" title="Follow satellite (F)">Follow satellite</button><button id="lrp">Replay</button><button id="lcl">Close</button></div><div class="big"></div><div class="stat"></div>`;
   document.body.append(host);
   const $ = q => host.querySelector(q), big = $(".big"), stat = $(".stat");
 
@@ -1298,16 +1314,33 @@ function launch() {
   const flame = part(new THREE.ConeGeometry(.032, .22, 12), new THREE.MeshBasicMaterial({ color: 0xffa040 }), -.21); flame.rotation.x = Math.PI;
   rocket.scale.setScalar(2.2); plane.add(rocket);
 
-  const sat = new THREE.Group(), bs = .2 + .015 * units;
-  sat.add(new THREE.Mesh(new THREE.BoxGeometry(bs, bs * 1.5, bs), new THREE.MeshStandardMaterial({ color: 0xd9b25a, metalness: .8, roughness: .35 })));
-  const panelMat = new THREE.MeshStandardMaterial({ color: 0x1c2f70, metalness: .4, roughness: .3, emissive: 0x2a4aff, emissiveIntensity: .5 });
-  const panels = [-1, 1].map(d => {
-    const g = new THREE.Group(); g.position.x = d * bs / 2;
-    const m = new THREE.Mesh(new THREE.BoxGeometry(.7, .01, bs * 1.3), panelMat); m.position.x = d * .35; g.add(m); sat.add(g); return g;
-  });
+  // The satellite: the model the user built, if the 3D viewer has one; otherwise a generic CubeSat.
+  const sat = new THREE.Group(), built = window.__satModel?.();
+  let envTex = null, panelMat = null, deploy;
+  if (built) {
+    envTex = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+    built.traverse(o => { if (o.isMesh) { o.material.envMap = envTex; o.material.envMapIntensity = .7; } });
+    const bb = new THREE.Box3().setFromObject(built), dims = bb.getSize(new THREE.Vector3()).toArray().sort((x, y) => x - y);
+    built.position.copy(bb.getCenter(new THREE.Vector3())).multiplyScalar(-1);   // spin about its middle
+    const holder = new THREE.Group(); holder.add(built); sat.add(holder);
+    // Scale by the middle dimension, so long antennas or wide panels don't shrink the body to a speck.
+    const size = (.55 + .025 * units) / (dims[1] || 1);
+    deploy = k => holder.scale.setScalar(size * (.25 + .75 * Math.min(1, k / 1.5) ** .5));
+  } else {
+    const bs = .2 + .015 * units;
+    sat.add(new THREE.Mesh(new THREE.BoxGeometry(bs, bs * 1.5, bs), new THREE.MeshStandardMaterial({ color: 0xd9b25a, metalness: .8, roughness: .35 })));
+    panelMat = new THREE.MeshStandardMaterial({ color: 0x1c2f70, metalness: .4, roughness: .3, emissive: 0x2a4aff, emissiveIntensity: .5 });
+    const panels = [-1, 1].map(d => {
+      const g = new THREE.Group(); g.position.x = d * bs / 2;
+      const m = new THREE.Mesh(new THREE.BoxGeometry(.7, .01, bs * 1.3), panelMat); m.position.x = d * .35; g.add(m); sat.add(g); return g;
+    });
+    sat.scale.setScalar(1.4);
+    deploy = k => panels.forEach(p => p.scale.x = Math.min(1, k / 1.5));
+  }
   const gl = tex(64, 64, (g, w) => { const r = g.createRadialGradient(32, 32, 0, 32, 32, 32); r.addColorStop(0, "rgba(94,234,212,.9)"); r.addColorStop(1, "rgba(94,234,212,0)"); g.fillStyle = r; g.fillRect(0, 0, w, w); });
-  const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: gl, blending: THREE.AdditiveBlending, depthWrite: false })); spr.scale.setScalar(1.3); sat.add(spr);
-  sat.scale.setScalar(1.4); plane.add(sat);
+  const sprBase = built ? .45 : 1;
+  const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: gl, blending: THREE.AdditiveBlending, depthWrite: false, opacity: sprBase })); spr.scale.setScalar(built ? 2.2 : 1.3); sat.add(spr);
+  plane.add(sat);
 
   const th0 = Math.PI / 2 - 1.1;
   const at = u => { const r = R + (ro - R) * (1 - (1 - u) ** 2.2), th = th0 + 1.1 * u * u; return new THREE.Vector3(Math.cos(th) * r, 0, Math.sin(th) * r); };
@@ -1315,6 +1348,37 @@ function launch() {
   let start = performance.now(), dead = false, raf = 0, last = start;
 
   function replay() { start = performance.now(); ascentTrail.clear(); orbitTrail.clear(); }
+
+  // Follow cam: glide in behind the rocket (then the satellite) and ride along with it.
+  // The camera's offset turns with the orbit, so the view stays the same as it goes around.
+  let follow = false, fly = null;
+  const home = camera.position.clone(), O = new THREE.Vector3(), tp = new THREE.Vector3(), prevDir = new THREE.Vector3();
+  const qd = new THREE.Quaternion(), off = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0).applyQuaternion(plane.quaternion);
+  const chaseSpot = p => p.clone().addScaledVector(p.clone().normalize(), 2.4).addScaledVector(up, 1.1);   // above and outside, Earth behind
+  function setFollow(on) {
+    follow = on;
+    const b = $("#lfo"); b.textContent = on ? "Free camera" : "Follow satellite"; b.setAttribute("aria-pressed", on);
+    fly = { t0: performance.now(), cam: camera.position.clone(), tgt: controls.target.clone() };
+    if (on) controls.minDistance = .5;   // restored once the camera is back out
+  }
+  function steer(now, obj) {
+    obj.getWorldPosition(tp);
+    if (fly) {
+      const u = Math.min(1, (now - fly.t0) / 1400), e = u * u * (3 - 2 * u);
+      const endT = follow ? tp : O, endC = follow ? chaseSpot(tp) : home;
+      controls.target.lerpVectors(fly.tgt, endT, e);
+      // swing around the Earth rather than straight through it
+      qd.setFromUnitVectors(fly.cam.clone().normalize(), endC.clone().normalize());
+      camera.position.copy(fly.cam).normalize().applyQuaternion(new THREE.Quaternion().slerp(qd, e))
+        .multiplyScalar(THREE.MathUtils.lerp(fly.cam.length(), endC.length(), e));
+      if (u === 1) { fly = null; if (!follow) controls.minDistance = R * 1.6; }
+    } else if (follow) {
+      off.subVectors(camera.position, controls.target).applyQuaternion(qd.setFromUnitVectors(prevDir, tp.clone().normalize()));
+      controls.target.copy(tp); camera.position.copy(tp).add(off);
+    }
+    prevDir.copy(tp).normalize();
+    spr.material.opacity += ((follow ? 0 : sprBase) - spr.material.opacity) * .08;   // the glow only helps from far away
+  }
   function frame(now) {
     if (dead) return; raf = requestAnimationFrame(frame);
     const e = (now - start) / 1000, dt = Math.min(.05, (now - last) / 1000); last = now;
@@ -1332,23 +1396,31 @@ function launch() {
     } else {
       const k = e - L0 - ASCENT, th = th0 + 1.1 + w * k;
       sat.position.set(Math.cos(th) * ro, 0, Math.sin(th) * ro); sat.rotation.y = -th;
-      panels.forEach(p => p.scale.x = Math.min(1, k / 1.5)); orbitTrail.push(sat.position);
+      deploy(k); orbitTrail.push(sat.position);
       sat.getWorldPosition(wp);
       const d = wp.dot(sunDir), dark = d < 0 && wp.clone().addScaledVector(sunDir, -d).length() < R;
-      panelMat.emissiveIntensity = dark ? .03 : .5;
-      stat.textContent = k < 1.5 ? "Deploying solar panels" : dark ? "In orbit · eclipse" : "In orbit · sunlit";
+      if (panelMat) panelMat.emissiveIntensity = dark ? .03 : .5;
+      stat.textContent = k < 1.5 ? (built ? "Separating from the rocket" : "Deploying solar panels") : dark ? "In orbit · eclipse" : "In orbit · sunlit";
       $("#lli").textContent = dark ? "Eclipse" : "Sunlit";
       const sec = k * speedup, h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60);
       $("#lmt").textContent = `T+${h} h ${m} min`;
     }
+    steer(now, inOrbit ? sat : rocket);
     controls.update(); renderer.render(scene, camera);
   }
   const resize = () => { renderer.setSize(host.clientWidth, host.clientHeight, false); camera.aspect = host.clientWidth / host.clientHeight; camera.updateProjectionMatrix(); };
   const ro2 = new ResizeObserver(resize); ro2.observe(host); resize();
-  const close = () => { dead = true; cancelAnimationFrame(raf); ro2.disconnect(); renderer.dispose(); host.remove(); removeEventListener("keydown", key); };
-  const key = ev => { if (ev.key === "Escape") close(); };
+  const close = () => {
+    dead = true; cancelAnimationFrame(raf); ro2.disconnect();
+    built?.traverse(o => { if (o.isMesh) { o.geometry.dispose(); o.material.dispose(); } }); envTex?.dispose();
+    renderer.dispose(); host.remove(); removeEventListener("keydown", key);
+  };
+  const key = ev => {
+    if (ev.key === "Escape") close();
+    else if ((ev.key === "f" || ev.key === "F") && !ev.metaKey && !ev.ctrlKey && !ev.altKey) setFollow(!follow);
+  };
   addEventListener("keydown", key);
-  $("#lcl").onclick = close; $("#lrp").onclick = replay;
+  $("#lcl").onclick = close; $("#lrp").onclick = replay; $("#lfo").onclick = () => setFollow(!follow);
   raf = requestAnimationFrame(frame);
 }
 
