@@ -119,6 +119,17 @@ td small{display:block;color:var(--muted);font-size:12px}tfoot td{border-top:1px
 .how{margin-top:14px;padding:14px 16px;background:var(--card);border-radius:10px}.how p{margin:0 0 12px;font-size:14.5px}.how p:last-child{margin:0}
 .how .label{margin-bottom:6px}.how .notes{margin-bottom:14px}.how .notes b{font-weight:600}.how .tag{color:var(--accent);font-size:12.5px}
 tr.extra td:first-child{color:var(--accent)}
+
+/* part colours: every part gets its own hue, shared by its table row, 3D callout, tooltip and description */
+:root{--p0:#c92a2a;--p1:#1971c2;--p2:#2b8a3e;--p3:#9c36b5;--p4:#d9480f;--p5:#0c8599;--p6:#9a7400;--p7:#5f3dc4;--p8:#c2255c;--p9:#a0522d}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--p0:#ff8787;--p1:#74c0fc;--p2:#8ce99a;--p3:#e599f7;--p4:#ffa94d;--p5:#66d9e8;--p6:#ffe066;--p7:#b197fc;--p8:#f783ac;--p9:#e0a07a}}
+:root[data-theme="dark"]{--p0:#ff8787;--p1:#74c0fc;--p2:#8ce99a;--p3:#e599f7;--p4:#ffa94d;--p5:#66d9e8;--p6:#ffe066;--p7:#b197fc;--p8:#f783ac;--p9:#e0a07a}
+[data-pc="0"]{--mc:var(--p0)}[data-pc="1"]{--mc:var(--p1)}[data-pc="2"]{--mc:var(--p2)}[data-pc="3"]{--mc:var(--p3)}[data-pc="4"]{--mc:var(--p4)}
+[data-pc="5"]{--mc:var(--p5)}[data-pc="6"]{--mc:var(--p6)}[data-pc="7"]{--mc:var(--p7)}[data-pc="8"]{--mc:var(--p8)}[data-pc="9"]{--mc:var(--p9)}
+.labels div[data-pc]:not(.hl){color:var(--mc);border-color:var(--mc)}
+#rows tr[data-pc] td:first-child,.tip b[data-pc],.how b[data-pc]{color:var(--mc)}
+.labels div[data-pc]::before,#rows tr[data-pc] td:first-child::before{content:"";display:inline-block;width:9px;height:9px;border-radius:2px;background:var(--mc);margin-right:7px}
+
 /* build plan */
 .gantt{display:grid;grid-template-columns:minmax(110px,160px) minmax(0,1fr) auto;gap:6px 10px;align-items:center;font-size:13.5px}
 .gantt .track{position:relative;height:12px;background:var(--card);border-radius:4px}.gantt .bar{position:absolute;top:0;bottom:0;background:var(--accent);border-radius:4px;opacity:.85}
@@ -228,6 +239,12 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt
 const num = (n, d = 1) => n == null ? "–" : (Math.round(n * 10 ** d) / 10 ** d).toLocaleString();
 const usd = n => n == null ? "–" : n >= 1e6 ? "$" + (n / 1e6).toFixed(2) + "M" : n >= 1e3 ? "$" + Math.round(n / 1e3).toLocaleString() + "k" : "$" + Math.round(n);
 const modelName = id => !id ? "" : id.replace(/^claude-/, "").replace(/^(\w+)-(\d+)-(\d+).*/, (_, n, a, b) => n[0].toUpperCase() + n.slice(1) + " " + a + "." + b);
+
+/* ---------- part colours ---------- */
+// Each part gets one of 10 hues from its table row number; parts added for a request count down from the end.
+const partKey = p => p.part_index >= 0 ? "i" + p.part_index : "r" + p.ref;
+const rowColor = i => ((+i || 0) % 10 + 10) % 10;
+const partColor = p => p.part_index >= 0 ? rowColor(p.part_index) : rowColor(9 - [...String(p.ref ?? "")].reduce((a, ch) => a + ch.charCodeAt(0), 0));
 
 /* ================================================================ 3D viewer */
 const viewer = await (async () => {
@@ -394,6 +411,7 @@ const viewer = await (async () => {
       g.userData.center = bb.getCenter(new THREE.Vector3());
       const lab = document.createElement("div");
       lab.textContent = p.label;
+      lab.dataset.pc = partColor(p);
       labelBox.appendChild(lab);
       g.userData.labelEl = lab;
       root.add(g); groups.push(g);
@@ -460,7 +478,7 @@ const viewer = await (async () => {
   // hover
   const ray = new THREE.Raycaster(), ptr = new THREE.Vector2();
   // Parts are matched by key: design parts by their table row, added extras by their own ref.
-  const keyOf = p => p.part_index >= 0 ? "i" + p.part_index : "r" + p.ref;
+  const keyOf = partKey;
   function highlight(i) {
     if (i === hovered) return;
     hovered = i;
@@ -573,7 +591,7 @@ function render(b){
   setMeter("massM", b.massRatio, b.massState);
   setMeter("powM", b.powRatio, b.powState);
   $("rows").innerHTML = b.rows.map(r =>
-    `<tr data-k="i${r.part_index}"><td>${esc(r.name)}${r.note ? `<small>${esc(r.note)}</small>` : ""}</td><td>${kg(r.kg)}</td>` +
+    `<tr data-k="i${r.part_index}" data-pc="${rowColor(r.part_index)}"><td>${esc(r.name)}${r.note ? `<small>${esc(r.note)}</small>` : ""}</td><td>${kg(r.kg)}</td>` +
     `<td>${r.w ? fmt(r.w) : r.gen_w ? "+" + fmt(r.gen_w) : "–"}</td>` +
     `<td>${r.k == null ? '<span class="quote">quote</span>' : Math.round(r.k) + (r.estimate ? '<span class="est">*</span>' : "")}</td></tr>`).join("");
   $("tMass").textContent = (Math.round(b.mass*100)/100).toString();
@@ -635,7 +653,7 @@ function renderHow(sceneData, info){
     const name = p.extra ? p.extra.name : current.design.parts[p.part_index].part;
     if (seen.has(name)) continue;            // e.g. four identical solar panels: say it once
     seen.add(name);
-    items.push(`<li><span><b>${esc(name)}</b>${p.extra ? ' <span class="tag">added for your request</span>' : ""}: ${esc(p.role)}</span></li>`);
+    items.push(`<li><span><b data-pc="${partColor(p)}">${esc(name)}</b>${p.extra ? ' <span class="tag">added for your request</span>' : ""}: ${esc(p.role)}</span></li>`);
   }
   $("howParts").innerHTML = items.join("");
   $("howSec").hidden = false;
@@ -647,7 +665,7 @@ function renderExtraRows(sceneData){
   const extras = sceneData.parts.filter(p => p.extra);
   for (const p of extras) {
     const tr = document.createElement("tr");
-    tr.className = "extra"; tr.dataset.k = "r" + p.ref;
+    tr.className = "extra"; tr.dataset.k = "r" + p.ref; tr.dataset.pc = partColor(p);
     tr.innerHTML = `<td>${esc(p.extra.name)}<small>added for your request · ${esc(p.extra.drawing)} · estimate, not in the totals</small></td>` +
       `<td>${p.extra.mass_kg == null ? "–" : kg(p.extra.mass_kg)}</td><td>${p.extra.power_w ? fmt(p.extra.power_w) : "–"}</td><td><span class="quote">–</span></td>`;
     tr.addEventListener("mouseenter", () => viewer?.highlightKey(tr.dataset.k));
@@ -718,12 +736,13 @@ if (viewer) {
     if (!p || !current) { tip.hidden = true; return; }
     document.querySelector(`#rows tr[data-k="${viewer.keyOf(p)}"]`)?.classList.add("hl");
     const role = p.role ? `<br><span>${esc(p.role)}</span>` : "";
+    const pc = partColor(p);
     if (p.extra) {
-      tip.innerHTML = `<b>${esc(p.extra.name)}</b><span>Added for your request · estimate</span><br>` +
+      tip.innerHTML = `<b data-pc="${pc}">${esc(p.extra.name)}</b><span>Added for your request · estimate</span><br>` +
         `${num(p.extra.mass_kg, 2)} kg · ${num(p.extra.power_w, 1)} W` + role;
     } else {
       const part = current.design.parts[p.part_index];
-      tip.innerHTML = `<b>${esc(p.label)}</b><span>${esc(part.vendor)} · ${esc(part.slot)}</span><br>` +
+      tip.innerHTML = `<b data-pc="${pc}">${esc(p.label)}</b><span>${esc(part.vendor)} · ${esc(part.slot)}</span><br>` +
         `${num(part.unit_mass_kg, 3)} kg` + (part.peak_power_w ? ` · ${num(part.peak_power_w / part.quantity, 2)} W` : "") +
         ` · ${part.unit_cost_usd != null ? usd(part.unit_cost_usd) : "no public price"}` + role;
     }
@@ -1054,7 +1073,129 @@ function tex(w, h, fn) {
   const c = document.createElement("canvas"); c.width = w; c.height = h; fn(c.getContext("2d"), w, h);
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
 }
-const blob = (g, x, y, r) => { g.beginPath(); for (let k = 0; k < 10; k++) { const a = k / 10 * 6.283, q = r * (.6 + rnd() * .7); g.lineTo(x + Math.cos(a) * q * 1.6, y + Math.sin(a) * q); } g.fill(); };
+
+/* ---------- Earth imagery ----------
+   Real maps: NASA Blue Marble (day), Black Marble (city lights), a water mask for sun glint and a
+   topography map for relief, served from the three-globe npm package. They load once and are reused
+   on every launch. Offline, a procedural Earth (continents, biomes, ice caps, cities) is drawn instead. */
+const EARTH_IMG = "https://cdn.jsdelivr.net/npm/three-globe@2.41.12/example/img/";
+let earthMaps = null, cloudMap = null, fakeEarth = null;
+
+function makeNoise(s) {   // smooth 3D value noise, sampled on the sphere so there's no seam at the date line
+  let st = s * 9973 + 1; const r = () => (st = st * 16807 % 2147483647) / 2147483647;
+  const a = [...Array(256).keys()];
+  for (let i = 255; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  const P = new Uint8Array(512); for (let i = 0; i < 512; i++) P[i] = a[i & 255];
+  const G = new Float32Array(256); for (let i = 0; i < 256; i++) G[i] = r();
+  const f = t => t * t * (3 - 2 * t), l = (a, b, t) => a + (b - a) * t;
+  function v(x, y, z) {
+    const X = Math.floor(x), Y = Math.floor(y), Z = Math.floor(z), u = f(x - X), w = f(y - Y), q = f(z - Z);
+    const a0 = P[X & 255], a1 = P[(X + 1) & 255], y0 = Y & 255, y1 = (Y + 1) & 255, z0 = Z & 255, z1 = (Z + 1) & 255;
+    return l(l(l(G[P[P[a0 + y0] + z0]], G[P[P[a1 + y0] + z0]], u), l(G[P[P[a0 + y1] + z0]], G[P[P[a1 + y1] + z0]], u), w),
+             l(l(G[P[P[a0 + y0] + z1]], G[P[P[a1 + y0] + z1]], u), l(G[P[P[a0 + y1] + z1]], G[P[P[a1 + y1] + z1]], u), w), q);
+  }
+  return (x, y, z, o) => { let s = 0, amp = .5, fr = 1, n = 0; for (let i = 0; i < o; i++) { s += amp * v(x * fr, y * fr, z * fr); n += amp; amp *= .5; fr *= 2.03; } return s / n; };
+}
+// Visit every pixel of an equirectangular map with its point on the unit sphere and latitude.
+function sphereMap(W, H, fn) {
+  const c = document.createElement("canvas"); c.width = W; c.height = H;
+  const g = c.getContext("2d"), img = g.createImageData(W, H), d = img.data;
+  for (let y = 0; y < H; y++) {
+    const lat = (.5 - (y + .5) / H) * Math.PI, cl = Math.cos(lat), sl = Math.sin(lat);
+    for (let x = 0; x < W; x++) {
+      const lon = (x + .5) / W * 2 * Math.PI;
+      fn(d, (y * W + x) * 4, cl * Math.cos(lon), sl, cl * Math.sin(lon), Math.abs(lat) * 57.2958);
+    }
+  }
+  g.putImageData(img, 0, 0);
+  return c;
+}
+const mix = (a, b, t) => a.map((v, i) => v + (b[i] - v) * Math.max(0, Math.min(1, t)));
+
+function proceduralEarth() {
+  if (fakeEarth) return fakeEarth;
+  const n = makeNoise(5), W = 1024, H = 512, SEA = .55;
+  const elev = new Float32Array(W * H), moist = new Float32Array(W * H);
+  let k = 0;
+  const day = sphereMap(W, H, (d, i, x, y, z, alat) => {
+    const e = elev[k] = n(x * 1.6 + 7, y * 1.6, z * 1.6, 5), m = moist[k] = n(x * 2.5 - 3, y * 2.5 + 5, z * 2.5, 3); k++;
+    let c;
+    if (e < SEA) c = mix([24, 82, 136], [6, 24, 62], (SEA - e) / .1);                         // shallow to deep ocean
+    else {
+      const h = (e - SEA) / (1 - SEA);
+      c = mix([28, 66, 26], [96, 112, 56], 1 - m * 1.4);                                        // forest to grassland
+      c = mix(c, [196, 166, 112], Math.max(0, 1 - Math.abs(alat - 24) / 14) * (1 - m) * 2.4);   // desert belts
+      c = mix(c, [118, 110, 88], (alat - 52) / 12);                                             // tundra
+      c = mix(c, [112, 100, 88], (h - .35) / .25);                                              // mountains
+    }
+    if (alat > 70 + (e - .5) * 40 || (e > SEA && (e - SEA) / (1 - SEA) > .6)) c = [236, 240, 245];   // ice caps, snowy peaks
+    d[i] = c[0]; d[i + 1] = c[1]; d[i + 2] = c[2]; d[i + 3] = 255;
+  });
+  k = 0;
+  const water = sphereMap(W, H, (d, i) => { const v = elev[k++] < SEA ? 255 : 0; d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = 255; });
+  k = 0;
+  const bump = sphereMap(W, H, (d, i) => { const v = Math.max(0, (elev[k++] - SEA) / (1 - SEA)) * 255; d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = 255; });
+  k = 0;
+  const night = sphereMap(W, H, (d, i, x, y, z, alat) => {
+    const e = elev[k], m = moist[k]; k++;
+    const city = e > SEA && alat < 62 && !(Math.abs(alat - 24) < 10 && m < .45) && rnd() < .05 * (m + .2);
+    const v = city ? 160 + rnd() * 95 : 0;
+    d[i] = v; d[i + 1] = v * .8; d[i + 2] = v * .5; d[i + 3] = 255;
+  });
+  const T = (c, srgb) => { const t = new THREE.CanvasTexture(c); if (srgb) t.colorSpace = THREE.SRGBColorSpace; return t; };
+  return fakeEarth = { day: T(day, true), night: T(night, true), water: T(water), bump: T(bump), size: [W, H], real: false };
+}
+
+function loadEarthMaps() {
+  if (earthMaps) return earthMaps;
+  const L = new THREE.TextureLoader(); L.setCrossOrigin("anonymous");
+  const get = (f, srgb) => new Promise((ok, no) => L.load(EARTH_IMG + f, t => { if (srgb) t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; ok(t); }, undefined, no));
+  earthMaps = Promise.all([get("earth-blue-marble.jpg", true), get("earth-night.jpg", true), get("earth-water.png"), get("earth-topology.png")])
+    .then(([day, night, water, bump]) => ({ day, night, water, bump, size: [2048, 1024], real: true }))
+    .catch(() => { earthMaps = null; return proceduralEarth(); });   // try the real maps again next launch
+  return earthMaps;
+}
+
+function clouds() {   // domain-warped noise, heavier along the equator and the stormy mid-latitudes
+  if (cloudMap) return cloudMap;
+  const n = makeNoise(9);
+  const c = sphereMap(768, 384, (d, i, x, y, z, alat) => {
+    const q = n(x * 3, y * 3, z * 3, 3);
+    const v = n(x * 4 + q * 1.8, y * 4.5 + q * 1.8, z * 4 - q * 1.8, 5);
+    const band = .1 * Math.exp(-((alat / 9) ** 2)) + .08 * Math.exp(-(((alat - 55) / 12) ** 2)) - .05 * Math.exp(-(((alat - 25) / 8) ** 2));
+    const cov = Math.max(0, Math.min(1, (v + band - .5) / .16));
+    d[i] = d[i + 1] = d[i + 2] = 255; d[i + 3] = cov * cov * (3 - 2 * cov) * 235;
+  });
+  cloudMap = new THREE.CanvasTexture(c); cloudMap.colorSpace = THREE.SRGBColorSpace;
+  return cloudMap;
+}
+
+const px = (r, g, b, srgb) => { const t = new THREE.DataTexture(new Uint8Array([r, g, b, 255]), 1, 1); if (srgb) t.colorSpace = THREE.SRGBColorSpace; t.needsUpdate = true; return t; };
+
+// Day side lit by the sun with relief on land and sun glint on water; night side shows city lights;
+// a thin blue limb where the atmosphere is sunlit.
+const EARTH_VS = `varying vec2 vUv;varying vec3 vN;varying vec3 vW;
+void main(){vUv=uv;vN=normalize(mat3(modelMatrix)*normal);vec4 w=modelMatrix*vec4(position,1.);vW=w.xyz;gl_Position=projectionMatrix*viewMatrix*w;}`;
+const EARTH_FS = `uniform sampler2D dayMap,nightMap,waterMap,bumpMap;uniform vec3 sunDir;uniform vec2 texel;uniform float bumpScale;
+varying vec2 vUv;varying vec3 vN;varying vec3 vW;
+void main(){
+  vec3 N0=normalize(vN);
+  vec3 E=normalize(cross(vec3(0.,1.,0.),N0)+vec3(1e-4,0.,0.)),Nn=cross(N0,E);
+  float h=texture2D(bumpMap,vUv).r,hx=texture2D(bumpMap,vUv+vec2(texel.x,0.)).r-h,hy=texture2D(bumpMap,vUv+vec2(0.,texel.y)).r-h;
+  float water=texture2D(waterMap,vUv).r;
+  vec3 N=normalize(N0-(E*hx+Nn*hy)*bumpScale*(1.-water));
+  vec3 V=normalize(cameraPosition-vW),H=normalize(sunDir+V);
+  float dN=dot(N0,sunDir),d=max(dot(N,sunDir),0.);
+  float dayAmt=smoothstep(-.1,.2,dN);
+  vec3 col=texture2D(dayMap,vUv).rgb*(d*1.2+.02);
+  col+=pow(max(dot(N0,H),0.),70.)*water*.8*smoothstep(0.,.15,dN)*vec3(1.,.93,.8);
+  col+=texture2D(nightMap,vUv).rgb*vec3(1.,.8,.55)*1.5*(1.-dayAmt);
+  float rim=pow(1.-max(dot(N0,V),0.),3.);
+  col+=vec3(.28,.52,1.)*rim*.6*smoothstep(-.2,.4,dN);
+  col+=vec3(.5,.18,.04)*smoothstep(.18,0.,abs(dN))*.08;
+  gl_FragColor=vec4(col,1.);
+  #include <colorspace_fragment>
+}`;
 
 function launch() {
   if (document.getElementById("lo")) return;
@@ -1071,7 +1212,7 @@ function launch() {
     <div>Period <b>${(T / 60).toFixed(1)} min</b></div><div>Speed <b>${vel.toFixed(2)} km/s</b></div>
     <div>Orbits per day <b>${(86400 / T).toFixed(1)}</b></div><div>Orbits in ${years} yr <b>${Math.round(years * 365.25 * 86400 / T).toLocaleString()}</b></div>
     <div>Mission time <b id="lmt">T-3</b></div><div>Lighting <b id="lli">–</b></div>
-    <div style="font-size:12px;color:#98a0aa;display:block">Altitude exaggerated ${VIS}× for visibility</div></div>
+    <div style="font-size:12px;color:#98a0aa;display:block">Altitude exaggerated ${VIS}× for visibility<br><span id="lsrc">Loading Earth imagery…</span></div></div>
     <div class="x"><button id="lrp">Replay</button><button id="lcl">Close</button></div><div class="big"></div><div class="stat"></div>`;
   document.body.append(host);
   const $ = q => host.querySelector(q), big = $(".big"), stat = $(".stat");
@@ -1093,19 +1234,33 @@ function launch() {
   const sg = new THREE.BufferGeometry(); sg.setAttribute("position", new THREE.BufferAttribute(stars, 3));
   scene.add(new THREE.Points(sg, new THREE.PointsMaterial({ size: 0.5, color: 0xcfd8ff, sizeAttenuation: false })));
 
-  const earthTex = tex(1024, 512, (g, w, h) => {
-    g.fillStyle = "#0b3a7a"; g.fillRect(0, 0, w, h);
-    for (let i = 0; i < 70; i++) { g.fillStyle = rnd() < .7 ? "#2f7d3f" : "#b39a62"; blob(g, rnd() * w, h * .15 + rnd() * h * .7, 20 + rnd() * 70); }
-    g.fillStyle = "#eef3f8"; g.fillRect(0, 0, w, h * .06); g.fillRect(0, h * .94, w, h * .06);
-  });
-  const cloudTex = tex(1024, 512, (g, w, h) => { g.clearRect(0, 0, w, h); g.fillStyle = "rgba(255,255,255,.55)"; for (let i = 0; i < 90; i++) blob(g, rnd() * w, rnd() * h, 10 + rnd() * 40); });
-  const earth = new THREE.Mesh(new THREE.SphereGeometry(R, 72, 48), new THREE.MeshStandardMaterial({ map: earthTex, roughness: .9 }));
-  const clouds = new THREE.Mesh(new THREE.SphereGeometry(R * 1.012, 72, 48), new THREE.MeshStandardMaterial({ map: cloudTex, transparent: true, depthWrite: false }));
-  const glow = new THREE.Mesh(new THREE.SphereGeometry(R * 1.14, 64, 48), new THREE.ShaderMaterial({
-    vertexShader: "varying vec3 n;void main(){n=normalize(normalMatrix*normal);gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}",
-    fragmentShader: "varying vec3 n;void main(){float i=pow(max(0.,.72-dot(n,vec3(0,0,1))),3.);gl_FragColor=vec4(.3,.6,1.,1.)*i*1.6;}",
+  // the Sun itself, far off along the light direction
+  const sunGlow = tex(128, 128, (g, w) => { const r = g.createRadialGradient(64, 64, 0, 64, 64, 64); r.addColorStop(0, "rgba(255,255,250,1)"); r.addColorStop(.12, "rgba(255,244,214,.95)"); r.addColorStop(.35, "rgba(255,210,140,.25)"); r.addColorStop(1, "rgba(255,200,120,0)"); g.fillStyle = r; g.fillRect(0, 0, w, w); });
+  const sunSpr = new THREE.Sprite(new THREE.SpriteMaterial({ map: sunGlow, blending: THREE.AdditiveBlending, depthWrite: false }));
+  sunSpr.position.copy(sunDir).multiplyScalar(140); sunSpr.scale.setScalar(26); scene.add(sunSpr);
+
+  const earthMat = new THREE.ShaderMaterial({
+    uniforms: { dayMap: { value: px(20, 60, 120, true) }, nightMap: { value: px(0, 0, 0, true) }, waterMap: { value: px(255, 255, 255) }, bumpMap: { value: px(0, 0, 0) },
+      sunDir: { value: sunDir }, texel: { value: new THREE.Vector2(1 / 2048, 1 / 1024) }, bumpScale: { value: 4 } },
+    vertexShader: EARTH_VS, fragmentShader: EARTH_FS });
+  const earth = new THREE.Mesh(new THREE.SphereGeometry(R, 128, 64), earthMat);
+  earth.rotation.y = -1.9;   // start with the Atlantic and Africa facing the camera
+  const cloudLayer = new THREE.Mesh(new THREE.SphereGeometry(R * 1.008, 128, 64), new THREE.MeshStandardMaterial({ map: clouds(), transparent: true, depthWrite: false, roughness: 1 }));
+  cloudLayer.rotation.y = earth.rotation.y;
+  const glow = new THREE.Mesh(new THREE.SphereGeometry(R * 1.09, 64, 48), new THREE.ShaderMaterial({
+    uniforms: { sunDir: { value: sunDir } },
+    vertexShader: "varying vec3 n;varying vec3 nw;void main(){n=normalize(normalMatrix*normal);nw=normalize(mat3(modelMatrix)*normal);gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}",
+    fragmentShader: "uniform vec3 sunDir;varying vec3 n;varying vec3 nw;void main(){float i=pow(max(0.,.7-dot(n,vec3(0,0,1))),4.);float s=smoothstep(-.35,.5,dot(nw,sunDir));gl_FragColor=vec4(.32,.6,1.,1.)*i*2.*(.12+.88*s);}",
     side: THREE.BackSide, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false }));
-  scene.add(earth, clouds, glow);
+  scene.add(earth, cloudLayer, glow);
+
+  loadEarthMaps().then(m => {
+    const u = earthMat.uniforms;
+    u.dayMap.value = m.day; u.nightMap.value = m.night; u.waterMap.value = m.water; u.bumpMap.value = m.bump;
+    u.texel.value.set(1 / m.size[0], 1 / m.size[1]);
+    const src = host.querySelector("#lsrc");
+    if (src) src.textContent = m.real ? "Earth imagery: NASA Blue Marble & Black Marble" : "Offline: procedural Earth";
+  });
 
   const plane = new THREE.Group(); plane.rotation.x = THREE.MathUtils.degToRad(incDeg); scene.add(plane);
   const ring = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(Array.from({ length: 256 }, (_, i) => new THREE.Vector3(Math.cos(i / 256 * 6.2832) * ro, 0, Math.sin(i / 256 * 6.2832) * ro))),
@@ -1148,7 +1303,7 @@ function launch() {
   function frame(now) {
     if (dead) return; raf = requestAnimationFrame(frame);
     const e = (now - start) / 1000, dt = Math.min(.05, (now - last) / 1000); last = now;
-    earth.rotation.y += dt * .02; clouds.rotation.y += dt * .027;
+    earth.rotation.y += dt * .02; cloudLayer.rotation.y += dt * .024;
     const inOrbit = e > L0 + ASCENT;
     rocket.visible = !inOrbit; sat.visible = inOrbit;
     big.textContent = e < 3 ? Math.ceil(3 - e) : e < 3.9 ? "LIFTOFF" : "";
@@ -1188,7 +1343,7 @@ if (resetBtn) {
   btn.id = "launchBtn"; btn.type = "button"; btn.textContent = "🚀 Launch";
   const wrap = document.createElement("div"); wrap.style.cssText = "display:flex;gap:8px";
   resetBtn.replaceWith(wrap); wrap.append(btn, resetBtn);
-  btn.addEventListener("click", launch);
+  btn.addEventListener("click", () => { loadEarthMaps(); launch(); });
 }
 </script>
 </body>
