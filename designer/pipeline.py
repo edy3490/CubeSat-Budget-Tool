@@ -110,3 +110,14 @@ def run(text: str, previous: Optional[SatSpec] = None, use_llm: Optional[bool] =
     data["design"] = design_to_dict(d)
     data["build_plan"] = build_plan(d)
     return Result(spec=spec, data=data)
+
+
+def from_spec(spec: SatSpec, text: str = "") -> Result:
+    """Rebuild the design for a spec that was already parsed, with no parser call: a saved
+    project after a server restart. Same parts as before unless the parts database changed."""
+    d = design(spec)
+    return Result(spec=spec, data={
+        "idea": text,
+        "parse": {"source": "saved", "error": None, "usage": None, "spec": spec.model_dump()},
+        "design": design_to_dict(d), "build_plan": build_plan(d),
+    })

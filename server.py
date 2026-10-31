@@ -7,6 +7,7 @@ API (POST bodies are JSON; errors come back as {"detail": "..."}):
     POST /api/budget        {}                              -> starter design
     POST /api/cubesat-chat  {"messages": [...], "spec": {}} -> {"reply", "spec", "budget", ...}
     POST /api/visual        {"design_id", "regenerate"}     -> 3D scene placed by Sonnet
+    POST /api/restore       {"design_id", "spec", "text"}   -> re-register a saved project's design after a restart
     POST /api/export        {"design_id", "format", "exploded", "name"} -> the 3D model as a STEP or STL file for CAD
     GET  /api/tokens                                        -> Sonnet tokens and cost so far
 
@@ -21,6 +22,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import secrets
 import sys
 import threading
@@ -39,7 +41,7 @@ try:
 except ImportError:
     pass
 
-from designer import run                              # noqa: E402  (also puts sat-parser on sys.path)
+from designer import from_spec, run                   # noqa: E402  (also puts sat-parser on sys.path)
 from sat_parser import SatSpec                        # noqa: E402
 from visualizer import SceneGenerator, default_scene  # noqa: E402
 from visualizer.export import file_name, to_step, to_stl  # noqa: E402
@@ -137,8 +139,8 @@ class State:
         self._lock = threading.Lock()
         self._starter = None
 
-    def put(self, entry: dict) -> str:
-        key = secrets.token_hex(8)
+    def put(self, entry: dict, key: str | None = None) -> str:
+        key = key or secrets.token_hex(8)
         with self._lock:
             self._designs[key] = entry
             while len(self._designs) > KEEP_DESIGNS:
@@ -152,14 +154,17 @@ class State:
     def tokens(self) -> dict:
         return {**self.generator.usage.status(), "llm": self.use_llm}
 
-    def respond(self, r, llm_used: bool, previous_id: str | None = None) -> dict:
-        """Package a designer Result in the page's response shape."""
+    @staticmethod
+    def _entry(r, previous_id: str | None) -> dict:
         # What the user asked for: the 3D call uses it to explain the satellite and add extras.
         # The designer's notes (e.g. no attitude-control unit) keep the 3D description consistent with the parts list.
         request = {"text": r.data["idea"], "goal": r.spec.mission_goal, "notes": r.spec.notes,
                    "design_notes": r.data["design"]["decisions"]}
-        design_id = self.put({"spec": r.spec.model_dump(), "design": r.data["design"],
-                              "previous_id": previous_id, "request": request})
+        return {"spec": r.spec.model_dump(), "design": r.data["design"], "previous_id": previous_id, "request": request}
+
+    def respond(self, r, llm_used: bool, previous_id: str | None = None) -> dict:
+        """Package a designer Result in the page's response shape."""
+        design_id = self.put(self._entry(r, previous_id))
         return {
             "reply": reply_text(r.data, llm_used),
             "spec": {"design_id": design_id, **r.spec.model_dump()},
@@ -171,6 +176,27 @@ class State:
             "quick_scene": default_scene(r.data["design"]),
             "tokens": self.tokens(),
         }
+
+    def restore(self, key, spec_fields, text: str = "") -> bool:
+        """Re-register a design the browser saved but this server has forgotten (it restarted, or
+        the design aged out), under the same id so the page's references stay valid. The design is
+        rebuilt from its spec, so its 3D layout comes back from the scene cache without a model call."""
+        if not isinstance(key, str) or not re.fullmatch(r"[0-9a-f]{16}", key):
+            return False
+        if self.get(key):
+            return True
+        if not isinstance(spec_fields, dict):
+            return False
+        try:
+            spec = SatSpec.model_validate({k: v for k, v in spec_fields.items() if k in SatSpec.model_fields})
+        except ValueError:
+            return False
+        entry = self._entry(from_spec(spec, str(text or "")[:MAX_IDEA_CHARS]), None)
+        scene = self.generator.cached(entry["design"], entry["request"])
+        if scene:
+            entry["scene"], entry["scene_source"] = scene, "cache"
+        self.put(entry, key)
+        return True
 
     def starter(self) -> dict:
         # Same design every time, keyword parser only: loading the page costs no tokens.
@@ -262,6 +288,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self._chat(body)
             if path == "/api/visual":
                 return self._visual(body)
+            if path == "/api/restore":
+                ok = self.state.restore(body.get("design_id"), body.get("spec"), body.get("text"))
+                return self._json(200, {"restored": True}) if ok else self._error(400, "can't restore that design")
             if path == "/api/export":
                 return self._export(body)
         except Exception as e:  # noqa: BLE001 - report instead of dropping the connection

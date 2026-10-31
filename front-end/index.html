@@ -546,13 +546,30 @@ const viewer = await (async () => {
   };
 })();
 
-async function post(url, body){
+// POST JSON and return the response, throwing on an error status. If the server has forgotten the
+// design (it restarted since a saved project was made), hand it the saved spec back and try once more.
+async function request(url, body, retried){
   const res = await fetch(url, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)});
+  if (res.status === 404 && !retried && body?.design_id && body.design_id === current?.design_id && await restoreDesign())
+    return request(url, body, true);
   if (!res.ok){
     let d = ""; try{ d = (await res.json()).detail || ""; }catch(e){}
     throw new Error("Server returned " + res.status + (d ? ": " + (typeof d === "string" ? d : JSON.stringify(d)) : ""));
   }
-  return res.json();
+  return res;
+}
+async function post(url, body){ return (await request(url, body)).json(); }
+
+// Re-register the design on screen with the server under its old id. The server rebuilds it from
+// the spec; its 3D layout comes back from the server's saved layouts without spending tokens.
+async function restoreDesign(){
+  if (!current?.design_id) return false;
+  const text = [...(active?.history || [])].reverse().find(m => m.role === "user")?.content || "";
+  try {
+    const res = await fetch("/api/restore", {method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({ design_id: current.design_id, spec: current.spec, text })});
+    return res.ok;
+  } catch (e) { return false; }
 }
 
 function setMeter(id, ratio, state){
@@ -742,9 +759,7 @@ if (viewer) {
     btn.disabled = true; btn.textContent = "Exporting…";
     try {
       // Exports what's on screen: assembled, or exploded if the view is spread out.
-      const res = await fetch("/api/export", {method:"POST", headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({ design_id: current.design_id, format, exploded: viewer.exploded, name: active?.title })});
-      if (!res.ok) { let d = ""; try { d = (await res.json()).detail || ""; } catch (e) {} throw new Error("Server returned " + res.status + (d ? ": " + d : "")); }
+      const res = await request("/api/export", { design_id: current.design_id, format, exploded: viewer.exploded, name: active?.title });
       const name = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") || "")?.[1] || "cubesat." + format;
       const a = document.createElement("a");
       a.href = URL.createObjectURL(await res.blob()); a.download = name;
@@ -956,6 +971,7 @@ function openProject(p){
   if (p.design) {
     showDesign(p.design, false);
     if (p.scene) showScene(p.scene.data, p.scene.info);
+    restoreDesign();     // so follow-up edits build on this design even if the server restarted
     fetch("/api/tokens").then(r => r.json()).then(t => { if (active === p) renderTokens(t); }).catch(() => {});
   }
   renderProjects();

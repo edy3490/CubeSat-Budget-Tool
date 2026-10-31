@@ -78,6 +78,41 @@ class ServerTest(unittest.TestCase):
                 self.post("/api/export", body)
             self.assertEqual(e.exception.code, code)
 
+    def test_saved_design_is_restored_after_a_restart(self):
+        out = self.chat("3U camera cubesat at 550 km")
+        key, state = out["design_id"], server.Handler.state
+        # Pretend the drawing the page shows came from Sonnet and was saved to the scene cache.
+        entry = state.get(key)
+        drawn = {**out["quick_scene"], "summary": "drawn by the model"}
+        cache_key = state.generator.cache_key(entry["design"], entry["request"])
+        state.generator._cache[cache_key] = {"scene": drawn, "source": "sonnet"}
+        try:
+            with state._lock:
+                state._designs.clear()                       # the server restarted
+            with self.assertRaises(urllib.error.HTTPError) as e:
+                self.post("/api/visual", {"design_id": key})
+            self.assertEqual(e.exception.code, 404)
+
+            self.assertTrue(self.post("/api/restore", {"design_id": key, "spec": out["spec"],
+                                                       "text": "3U camera cubesat at 550 km"})["restored"])
+            restored = state.get(key)
+            self.assertEqual(restored["design"]["parts"], entry["design"]["parts"])    # same parts, same id
+            self.assertEqual(restored["scene"]["summary"], "drawn by the model")       # no model call needed
+            self.assertEqual(self.post("/api/visual", {"design_id": key})["source"], "cache")
+            disposition, step = self.export({"design_id": key, "format": "step"})
+            self.assertTrue(step.startswith(b"ISO-10303-21;"))
+            follow = self.chat("make it 6U", spec=out["spec"])                         # edits still chain
+            self.assertEqual(state.get(follow["design_id"])["previous_id"], key)
+        finally:
+            state.generator._cache.pop(cache_key, None)
+
+    def test_restore_refuses_bad_input(self):
+        for body in ({"design_id": "../etc", "spec": {"size_u": 3}}, {"design_id": "ab" * 8, "spec": "nope"},
+                     {"design_id": "ab" * 8, "spec": {"size_u": "huge", "payload": "laser"}}):
+            with self.subTest(body=body), self.assertRaises(urllib.error.HTTPError) as e:
+                self.post("/api/restore", body)
+            self.assertEqual(e.exception.code, 400)
+
     def test_engine_codes_become_sentences(self):
         notes = [n[1] for n in self.chat("3U camera at 300 km for 3 years")["budget"]["notes"]]
         self.assertFalse(any(n.startswith(("UNPRICED", "PEAK_OVER_SOLAR", "THRUSTER_BATTERY_LIMITED")) for n in notes))

@@ -251,6 +251,12 @@ class SceneGenerator:
                + [request.get("goal", ""), request.get("notes", ""), request.get("design_notes") or []])
         return hashlib.sha256(json.dumps(sig).encode()).hexdigest()[:16]
 
+    def cached(self, design: dict, request: dict | None = None) -> dict | None:
+        """The saved layout for this design and request, if there is one (no model call)."""
+        with self._lock:
+            hit = self._cache.get(self.cache_key(design, request))
+        return hit["scene"] if hit else None
+
     def generate(self, design: dict, regenerate: bool = False, use_llm: bool = True,
                  previous: Optional[dict] = None, request: Optional[dict] = None) -> dict:
         """Lay the design out and explain it. Returns {"scene", "source", "model", "usage", "attempts",
